@@ -101,54 +101,43 @@ class VoiceMailsController extends GetxController {
   }
 
   downloadVoicemail(id) async {
-    String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
-    String? token =
+    // Writing to getApplicationDocumentsDirectory() is in the app's
+    // private sandbox — no storage permission required on any platform.
+    // The legacy Permission.storage.request() that used to gate this code
+    // returns "denied permanently" on Android 13+ and broke the feature
+    // entirely.
+    final apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    final token =
         await SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.storage,
-    ].request();
-
-    if (statuses[Permission.storage]!.isGranted) {
-      Directory? directory = await getApplicationDocumentsDirectory();
-      var dir = directory.path;
-      if (dir.isNotEmpty) {
-        savePath = dir + "/ITP Voicemails/voicemail_$id.mp3";
-
-        try {
-          Get.back();
-          CustomLoader.showLoader();
-          await Dio().download(
-              "${Endpoints.DOWNLOAD_VOICE_MAIL_MESSAGES(apiId)}/${id}?token=${token}",
-              savePath, onReceiveProgress: (received, total) {
-            if (total != -1) {
-              print((received / total * 100).toStringAsFixed(0) + "%");
-            }
-          });
-          Get.back();
-
-          CustomToast.showToast(
-              "Voicemail saved to downloads/ITP Voicemails/voicemail_$id.mp3",
-              false);
-          return;
-        } on DioError catch (e) {
-          Get.back();
-          savePath = "";
-          CustomToast.showToast(
-              "Something when wrong while downloading voicemail", true);
-          // print(e.message);
-          return;
-        } catch (e) {
-          Get.back();
-          CustomToast.showToast("Something went wrong", true);
-          return;
-        }
-      }
-    } else {
-      CustomToast.showToast(
-        "Please allow storage permission to download voicemail",
-        true,
+    final directory = await getApplicationDocumentsDirectory();
+    final dir = directory.path;
+    if (dir.isEmpty) {
+      CustomToast.showToast('Could not locate storage directory', true);
+      return;
+    }
+    savePath = '$dir/ITP Voicemails/voicemail_$id.mp3';
+    try {
+      Get.back();
+      CustomLoader.showLoader();
+      await Dio().download(
+        '${Endpoints.DOWNLOAD_VOICE_MAIL_MESSAGES(apiId)}/$id?token=$token',
+        savePath,
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            print('${(received / total * 100).toStringAsFixed(0)}%');
+          }
+        },
       );
-      return null;
+      Get.back();
+      CustomToast.showToast('Voicemail saved', false);
+    } on DioError catch (_) {
+      Get.back();
+      savePath = '';
+      CustomToast.showToast(
+          'Something went wrong while downloading voicemail', true);
+    } catch (_) {
+      Get.back();
+      CustomToast.showToast('Something went wrong', true);
     }
   }
 

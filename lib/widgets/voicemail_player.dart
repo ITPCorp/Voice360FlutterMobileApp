@@ -59,35 +59,29 @@ class _VoiceMailPlayerState extends State<VoiceMailPlayer> {
   }
 
   void _downloadAndPlay(id) async {
-    ///audio-1
-    String savePath = appDirectory.path + "voicemail_${id}.mp3";
-    String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
-    String? token =
+    // Save into the app's private documents directory — that path is
+    // app-sandboxed on both iOS and Android, so no storage permission is
+    // needed. (The old `Permission.storage.request()` here was a legacy
+    // Android 6-9 pattern that returns "denied permanently" on Android
+    // 13+, breaking voicemail playback entirely.)
+    final savePath = '${appDirectory.path}/voicemail_$id.mp3';
+    final apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    final token =
         await SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
-    Map<Permission, PermissionStatus> statuses = await [
-      Permission.storage,
-    ].request();
-
-    if (statuses[Permission.storage]!.isGranted) {
-      try {
-        await Dio().download(
-            "${Endpoints.DOWNLOAD_VOICE_MAIL_MESSAGES(apiId)}/${id}?token=${token}",
-            savePath, onReceiveProgress: (received, total) {
+    try {
+      await Dio().download(
+        '${Endpoints.DOWNLOAD_VOICE_MAIL_MESSAGES(apiId)}/$id?token=$token',
+        savePath,
+        onReceiveProgress: (received, total) {
           if (total != -1) {
-            print((received / total * 100).toStringAsFixed(0) + "%");
-            //you can build progressbar feature too
+            print('${(received / total * 100).toStringAsFixed(0)}%');
           }
-        });
-        playerController1.preparePlayer(path: savePath);
-      } catch (e) {
-        print(e.toString());
-      }
-    } else {
-      CustomToast.showToast(
-        "Please allow storage permission to download voicemail",
-        true,
+        },
       );
-      return null;
+      playerController1.preparePlayer(path: savePath);
+    } catch (e) {
+      print('Voicemail download failed: $e');
+      CustomToast.showToast('Could not load voicemail audio', true);
     }
   }
 
