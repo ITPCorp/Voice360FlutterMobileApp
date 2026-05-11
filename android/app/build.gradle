@@ -46,7 +46,7 @@ android {
         applicationId = "com.appicator.itp_voice"
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion 35
-        versionCode 102
+        versionCode 103
         versionName "2.1.3"
     }
 
