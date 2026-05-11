@@ -78,6 +78,7 @@ dependencies:
   # which requires compileSdk 36 + AGP 8.9.1. This project is on 34/8.7.3.
   url_launcher_android: ">=6.3.0 <6.3.15"
   flutter_web_auth_2: ^4.1.0
+  package_info_plus: ^8.0.2
   # flutter_pjsip: ^0.0.2-dev.2
 
 dev_dependencies:

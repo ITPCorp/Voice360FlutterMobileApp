@@ -9,6 +9,7 @@ import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/repo/base_requester.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/demo_mode_service.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/storage_keys.dart';
@@ -153,6 +154,31 @@ class _DebugScreenState extends State<DebugScreen> {
           : ListView(
               padding: const EdgeInsets.all(V360Spacing.s4),
               children: [
+                _section('Demo mode (Play Store screenshots)', [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'When ON, the messages list, chat threads, and call history use curated fake data. Toggle, then pull-to-refresh each screen.',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                      Switch(
+                        value: DemoModeService.instance.enabled,
+                        onChanged: (v) async {
+                          await DemoModeService.instance.setEnabled(v);
+                          setState(() {});
+                          CustomToast.showToast(
+                            v
+                                ? 'Demo mode ON. Pull-to-refresh tabs.'
+                                : 'Demo mode OFF.',
+                            false,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ]),
                 _section('Firebase', [
                   _kv('firebaseReady (flag)', firebaseReady.toString()),
                   _kv('app.name', _firebaseAppName ?? '(no app)'),

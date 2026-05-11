@@ -51,16 +51,30 @@ class CallSettingsController extends GetxController {
   final TextEditingController forwardNumberController = TextEditingController();
 
   // ── Outbound caller ID override (server-backed) ──────────────────────────
-  /// Local switch: ON when the user has set a custom caller ID number.
-  /// Matches the web's `switchOverrideDefaultCallerID` which is also derived
-  /// from whether the fields are populated (no server boolean exists).
+  /// True when the per-user caller ID override is active. The server field
+  /// is `automatic_caller_id` — same flag voice360-fe-redesign's MySettings
+  /// reads. When false, the user inherits the account-level caller ID
+  /// (set by admins on the GeneralSettings page in the web).
   final RxBool overrideDefaultCallerId = false.obs;
   final RxString selectedCallerIdNumber = ''.obs;
   final TextEditingController callerIdNameController = TextEditingController();
   final RxList<AssignedNumber> assignedNumbers = <AssignedNumber>[].obs;
   final RxBool isLoadingNumbers = false.obs;
 
-  // ── Call recording (local pref — no /my-extension equivalent) ────────────
+  /// Account-level outbound caller ID, read from `voice_account` on
+  /// `/my-extension`. When the user's own `default_outbound_callerid_*`
+  /// fields are empty, the dropdown should display this number as the
+  /// effective caller ID (inherited from the account default). Stored so
+  /// we can tell "this is the inherited account default" apart from
+  /// "this number was set but is no longer assigned to the account"
+  /// (the orphan-warning case).
+  final RxString accountDefaultCallerIdNumber = ''.obs;
+  final RxString accountDefaultCallerIdName = ''.obs;
+
+  // ── Call recording (server-backed: "enabled" string flags) ───────────────
+  /// Stored on the server as `call_recording_internal` / `call_recording_external`
+  /// with the value `"enabled"` or `"disabled"`. The web's MySettings checks
+  /// `=== "enabled"`. We mirror that — toggling PATCHes the string form.
   final RxBool callRecordingInternal = false.obs;
   final RxBool callRecordingExternal = false.obs;
 
@@ -92,21 +106,44 @@ class CallSettingsController extends GetxController {
         callForwarding.value = result['callforward_enable'] == true;
         forwardNumberController.text =
             (result['callforward_number'] ?? '').toString();
+        // Defaults to TRUE if the server hasn't explicitly set it to false —
+        // matches the web's `data.callforward_keep_caller_caller_id !== false`.
         keepOriginalCallerId.value =
-            result['callforward_keep_caller_caller_id'] == true;
+            result['callforward_keep_caller_caller_id'] != false;
         forwardQueueCalls.value = result['callforward_queue_calls'] == true;
         callScreening.value = result['callforward_call_confirmation'] == true;
 
-        final callerIdNumber =
+        // Caller ID: `automatic_caller_id` is the server boolean for "user
+        // override is active". When true, the user's saved
+        // default_outbound_callerid_* fields are used; if those are empty
+        // the user inherits the account-level values nested under
+        // `voice_account` (set by admins). Mirrors the web's MySettings.
+        overrideDefaultCallerId.value = result['automatic_caller_id'] == true;
+        final voiceAccount = result['voice_account'];
+        final acctNumber = voiceAccount is Map
+            ? (voiceAccount['default_outbound_callerid_number'] ?? '').toString()
+            : '';
+        final acctName = voiceAccount is Map
+            ? (voiceAccount['default_outbound_callerid_name'] ?? '').toString()
+            : '';
+        accountDefaultCallerIdNumber.value = acctNumber;
+        accountDefaultCallerIdName.value = acctName;
+        final userNumber =
             (result['default_outbound_callerid_number'] ?? '').toString();
-        final callerIdName =
+        final userName =
             (result['default_outbound_callerid_name'] ?? '').toString();
-        selectedCallerIdNumber.value = callerIdNumber;
-        callerIdNameController.text = callerIdName;
-        // Override considered "on" if either field is populated — same
-        // heuristic the web uses.
-        overrideDefaultCallerId.value =
-            callerIdNumber.isNotEmpty || callerIdName.isNotEmpty;
+        selectedCallerIdNumber.value =
+            userNumber.isNotEmpty ? userNumber : acctNumber;
+        callerIdNameController.text =
+            userName.isNotEmpty ? userName : acctName;
+
+        // Call recording flags are server-side per-user (the web's
+        // MySettings reads them from /my-extension too). Stored as the
+        // string "enabled" / "disabled" rather than a boolean.
+        callRecordingInternal.value =
+            result['call_recording_internal'] == 'enabled';
+        callRecordingExternal.value =
+            result['call_recording_external'] == 'enabled';
       }
     } catch (e) {
       // ignore: avoid_print
@@ -212,17 +249,11 @@ class CallSettingsController extends GetxController {
   // ── Caller ID override handlers ─────────────────────────────────────────
   Future<void> toggleOverrideDefaultCallerId(bool v) async {
     overrideDefaultCallerId.value = v;
-    if (!v) {
-      // Mirror editSwitchsCallerIdService: PATCH empty strings.
-      selectedCallerIdNumber.value = '';
-      callerIdNameController.clear();
-      await _patch({
-        'default_outbound_callerid_number': '',
-        'default_outbound_callerid_name': '',
-      });
-    }
-    // When turning ON we don't PATCH yet — wait for the user to actually
-    // pick a number/name. Same as the web.
+    // The server boolean is `automatic_caller_id` — same field the web's
+    // MySettings reads. PATCH it directly. We keep the existing number/name
+    // intact so the user doesn't lose what they previously set if they
+    // toggle off then back on.
+    await _patch({'automatic_caller_id': v});
   }
 
   Future<void> setCallerIdNumber(String number) async {
@@ -237,8 +268,25 @@ class CallSettingsController extends GetxController {
   }
 
   /// True when the persisted caller ID number isn't in the list of currently
-  /// assigned numbers — admin reassigned/removed it. Web flags this in red.
-  bool get hasOrphanedCallerId =>
-      selectedCallerIdNumber.value.isNotEmpty &&
-      !assignedNumbers.any((n) => n.number == selectedCallerIdNumber.value);
+  /// assigned numbers AND isn't the account-level default — admin
+  /// reassigned/removed it. Web flags this in red.
+  /// (The account default may legitimately not appear in the user's assigned
+  /// numbers — inheriting it is not an orphan condition.)
+  bool get hasOrphanedCallerId {
+    final selected = selectedCallerIdNumber.value;
+    if (selected.isEmpty) return false;
+    if (selected == accountDefaultCallerIdNumber.value) return false;
+    return !assignedNumbers.any((n) => n.number == selected);
+  }
+
+  // ── Call recording handlers (server-backed) ─────────────────────────────
+  Future<void> toggleCallRecordingInternal(bool v) async {
+    callRecordingInternal.value = v;
+    await _patch({'call_recording_internal': v ? 'enabled' : 'disabled'});
+  }
+
+  Future<void> toggleCallRecordingExternal(bool v) async {
+    callRecordingExternal.value = v;
+    await _patch({'call_recording_external': v ? 'enabled' : 'disabled'});
+  }
 }

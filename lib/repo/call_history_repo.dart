@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:itp_voice/controllers/call_history_controller.dart';
 import 'package:itp_voice/models/call_history_model.dart';
+import 'package:itp_voice/services/demo_mode_service.dart';
 import 'package:itp_voice/models/get_contacts_reponse_model/get_contacts_reponse_model.dart';
 import 'package:itp_voice/models/get_contacts_reponse_model/user_contact.dart';
 import 'package:itp_voice/repo/base_requester.dart';
@@ -16,6 +17,12 @@ class CallHistoryRepo {
   static const Duration _defaultWindow = Duration(days: 30);
 
   Future<dynamic> fetchCallHistory({required int offSet}) async {
+    if (DemoModeService.instance.enabled) {
+      itemCount = DemoModeService.instance.fakeCallHistory().length;
+      return offSet > 0
+          ? <CallHistory>[]
+          : DemoModeService.instance.fakeCallHistory();
+    }
     final List<CallHistory> out = [];
     final String? apiId =
         await SharedPreferencesMethod.getString(StorageKeys.API_ID);

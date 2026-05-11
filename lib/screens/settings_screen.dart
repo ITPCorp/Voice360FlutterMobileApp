@@ -6,6 +6,7 @@ import 'package:itp_voice/controllers/settings_controller.dart';
 import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/repo/auth_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 /// Unified Settings: appearance + call settings + account actions in one
 /// place. The previous separate Call Settings sub-screen has been folded in.
@@ -84,7 +85,9 @@ class SettingsScreen extends StatelessWidget {
               fullWidth: true,
               onPressed: () => _confirmLogout(context),
             ),
-            const SizedBox(height: V360Spacing.s10),
+            const SizedBox(height: V360Spacing.s6),
+            const _VersionFooter(),
+            const SizedBox(height: V360Spacing.s6),
           ],
         );
       }),
@@ -425,6 +428,11 @@ class SettingsScreen extends StatelessWidget {
     final match =
         con.assignedNumbers.firstWhereOrNull((n) => n.number == num);
     if (match != null) return match.label;
+    // Account-level default that isn't in the user's assigned numbers list —
+    // valid inherited fallback, not an orphan.
+    if (num == con.accountDefaultCallerIdNumber.value) {
+      return '${AssignedNumber.formatPhone(num)} (Account default)';
+    }
     return '${AssignedNumber.formatPhone(num)} (Number Not Available - Please Reassign)';
   }
 
@@ -461,11 +469,19 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 Flexible(
                   child: Obx(() {
+                    final acctNum = con.accountDefaultCallerIdNumber.value;
+                    final hasAcctOption = acctNum.isNotEmpty &&
+                        !con.assignedNumbers.any((n) => n.number == acctNum);
                     final items = <AssignedNumber>[
                       if (con.hasOrphanedCallerId)
                         AssignedNumber(
                           number: con.selectedCallerIdNumber.value,
                           description: 'Number Not Available - Please Reassign',
+                        ),
+                      if (hasAcctOption)
+                        AssignedNumber(
+                          number: acctNum,
+                          description: 'Account default',
                         ),
                       ...con.assignedNumbers,
                     ];
@@ -588,7 +604,7 @@ class SettingsScreen extends StatelessWidget {
                 description:
                     'Save audio recordings of calls between extensions on your account.',
                 value: con.callRecordingInternal.value,
-                onChanged: (v) => con.callRecordingInternal.value = v,
+                onChanged: con.toggleCallRecordingInternal,
               )),
           const SizedBox(height: V360Spacing.s3),
           Obx(() => _SettingRow(
@@ -599,7 +615,7 @@ class SettingsScreen extends StatelessWidget {
                 description:
                     'Save audio recordings of calls to and from numbers outside your account.',
                 value: con.callRecordingExternal.value,
-                onChanged: (v) => con.callRecordingExternal.value = v,
+                onChanged: con.toggleCallRecordingExternal,
               )),
         ],
       ),
@@ -850,6 +866,44 @@ class _IconHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _VersionFooter extends StatefulWidget {
+  const _VersionFooter();
+
+  @override
+  State<_VersionFooter> createState() => _VersionFooterState();
+}
+
+class _VersionFooterState extends State<_VersionFooter> {
+  String? _label;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
+    setState(() => _label = 'Version ${info.version} (${info.buildNumber})');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Center(
+      child: Text(
+        _label ?? '',
+        style: TextStyle(
+          fontSize: 12,
+          color: cs.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
     );
   }
 }

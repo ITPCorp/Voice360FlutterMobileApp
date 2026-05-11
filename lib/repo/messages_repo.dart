@@ -1,11 +1,13 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart';
+import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart' hide Result;
+import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart' as thr show Result;
 import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart';
 import 'package:itp_voice/repo/base_requester.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/demo_mode_service.dart';
 import 'package:itp_voice/storage_keys.dart';
 
 class MessagesRepo {
@@ -15,6 +17,15 @@ class MessagesRepo {
   /// Fetch a page of SMS threads for [myNumber]. Pass [offset] = 0 for the
   /// first page; subsequent pages add [kThreadsPageLimit] each time.
   getMessageThreads(String myNumber, {int offset = 0}) async {
+    if (DemoModeService.instance.enabled) {
+      // First page only — pretend pagination ended.
+      if (offset > 0) {
+        final empty = GetMessageThreadsResponseModel();
+        empty.result = thr.Result(messageThreads: const []);
+        return empty;
+      }
+      return DemoModeService.instance.fakeThreadsResponse();
+    }
     String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
       final base = Endpoints.GET_MESSAGE_THREADS(apiId, myNumber);
@@ -34,6 +45,9 @@ class MessagesRepo {
   }
 
   getThreadMessages(String threadId, String myNumber) async {
+    if (DemoModeService.instance.enabled) {
+      return DemoModeService.instance.fakeThreadMessages(threadId);
+    }
     String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
       String number = myNumber;

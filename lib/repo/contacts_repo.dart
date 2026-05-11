@@ -6,6 +6,7 @@ import 'package:itp_voice/models/get_contacts_reponse_model/get_contacts_reponse
 import 'package:itp_voice/repo/base_requester.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/demo_mode_service.dart';
 import 'package:itp_voice/storage_keys.dart';
 
 class ContactsRepo {
@@ -51,6 +52,15 @@ class ContactsRepo {
   }
 
   getContacts(String offSet,) async {
+    if (DemoModeService.instance.enabled) {
+      // First page only — pretend pagination ended.
+      if (offSet != '0') {
+        final empty = ContactResponse();
+        empty.result = const [];
+        return empty;
+      }
+      return DemoModeService.instance.fakeContacts();
+    }
     String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
 
     try {

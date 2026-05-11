@@ -11,6 +11,7 @@ import 'package:itp_voice/controllers/bindings.dart';
 import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/demo_mode_service.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:timezone/data/latest_all.dart';
 
@@ -97,6 +98,9 @@ Future<void> main() async {
     }
   }
   setupLocator();
+  // Load the demo-mode toggle from prefs before any repo runs, so the very
+  // first fetch returns canned data when demo mode is on.
+  await DemoModeService.instance.load();
   // PushService owns the FCM pipeline: foreground banners, taps, deep-links,
   // plus the local-notifications channel setup. Fire-and-forget.
   unawaited(locator<PushService>().initialize());
