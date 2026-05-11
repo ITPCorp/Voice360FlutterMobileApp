@@ -95,11 +95,15 @@ dev_dependencies:
 flutter_launcher_icons:
   android: "ic_launcher"
   ios: true
-  image_path:  "assets/images/logo1.png"
+  # Master 1024x1024 source — derived from the native iOS V360 wordmark
+  # in /Voice360-iOS/Voice360/Assets.xcassets. Composited on white (App Store
+  # rejects alpha). Re-run `flutter pub run flutter_launcher_icons` after
+  # replacing this file to regenerate all platform-specific sizes.
+  image_path: "assets/launcher/icon.png"
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/images/logo1.png"
+  adaptive_icon_foreground: "assets/launcher/icon.png"
   min_sdk_android: 21
-  remove_alpha_ios: true 
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

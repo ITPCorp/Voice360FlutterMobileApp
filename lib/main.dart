@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -26,16 +25,16 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 /// intentionally skip init until a GoogleService-Info.plist is present.
 bool firebaseReady = false;
 
-// Firebase options match the values in android/app/google-services.json (and
-// the iOS GoogleService-Info.plist). Hard-coded so we don't rely on the
-// google-services Gradle plugin's runtime resource merging which has been
-// flaky on AGP 8.x.
+// Firebase options match android/app/google-services.json (Android) and
+// ios/Runner/GoogleService-Info.plist (iOS). Hard-coded as a fallback so
+// we don't rely on the google-services Gradle plugin's runtime resource
+// merging (flaky on AGP 8.x).
 const FirebaseOptions _kFirebaseOptions = FirebaseOptions(
-  apiKey: 'AIzaSyCCAq0MQoIL_cjOaoNCKv3hRhYBv5DQ_xI',
-  appId: '1:876937112371:android:1f308b6fb95f064892ec46',
-  messagingSenderId: '876937112371',
-  projectId: 'itpvoice-9ea83',
-  storageBucket: 'itpvoice-9ea83.appspot.com',
+  apiKey: 'AIzaSyAwmhPKLNseEmT7AwTsya5jNyDSlq-Tzp8',
+  appId: '1:978411142854:android:322d5f317d4945392821c7',
+  messagingSenderId: '978411142854',
+  projectId: 'voice360mobile',
+  storageBucket: 'voice360mobile.firebasestorage.app',
 );
 
 Future<void> main() async {
@@ -50,38 +49,51 @@ Future<void> main() async {
     print('AppCache init failed: $e');
   }
 
-  // Skip Firebase entirely on iOS until a GoogleService-Info.plist is added
-  // to the Xcode project. The Firebase iOS SDK 12.x throws a native
-  // NSException when its config is missing, which can't be caught from Dart
-  // and crashes the whole app on launch. Push notifications won't work on
-  // iOS without it — but SIP/SMS/calls do. Android continues to auto-init
-  // via the FirebaseInitProvider when google-services.json is present.
-  if (!Platform.isIOS) {
-    // On Android the `google-services` Gradle plugin embeds a content
-    // provider that auto-registers the [DEFAULT] FirebaseApp before main()
-    // even runs. It can finish between our probe and our init call, so the
-    // safe pattern is: try, and if we hit the "already exists" race, treat
-    // it as a success — the native init landed and Firebase is ready.
+  // Firebase init pattern (cross-platform):
+  //   1. Android: `google-services` Gradle plugin embeds a content provider
+  //      that registers the [DEFAULT] FirebaseApp before main() runs.
+  //   2. iOS: the FlutterFire native iOS module reads
+  //      `ios/Runner/GoogleService-Info.plist` and registers similarly.
+  //   3. Native init can race with our Dart-side calls, so we:
+  //        a. Try Firebase.app() first. If it returns, we're done.
+  //        b. Otherwise call initializeApp. If THAT throws "already exists",
+  //           native won the race — still a success. Probe again to confirm.
+  //        c. firebaseReady only flips true after Firebase.app() returns
+  //           something usable.
+  Object? lastErr;
+  for (var attempt = 0; attempt < 2; attempt++) {
     try {
       Firebase.app();
-    } catch (_) {
+      // ignore: avoid_print
+      print('[Firebase] Default app available (attempt ${attempt + 1})');
+      firebaseReady = true;
+      break;
+    } catch (probeErr) {
+      lastErr = probeErr;
       try {
         await Firebase.initializeApp(options: _kFirebaseOptions);
-      } catch (e) {
-        final msg = e.toString().toLowerCase();
+        // ignore: avoid_print
+        print('[Firebase] initializeApp succeeded');
+      } catch (initErr) {
+        lastErr = initErr;
+        final msg = initErr.toString().toLowerCase();
         if (!msg.contains('already exists')) {
-          // Real failure (eg. bad config). Surface and bail.
           // ignore: avoid_print
-          print('Firebase init failed: $e');
+          print('[Firebase] initializeApp failed: $initErr');
         }
       }
     }
+  }
+  if (!firebaseReady) {
+    // ignore: avoid_print
+    print('[Firebase] gave up — no [DEFAULT] app. Last error: $lastErr');
+  } else {
     try {
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-      firebaseReady = true;
+      FirebaseMessaging.onBackgroundMessage(
+          _firebaseMessagingBackgroundHandler);
     } catch (e) {
       // ignore: avoid_print
-      print('Firebase onBackgroundMessage register failed: $e');
+      print('[Firebase] onBackgroundMessage register failed: $e');
     }
   }
   setupLocator();

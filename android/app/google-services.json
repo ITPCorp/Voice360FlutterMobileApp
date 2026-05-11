@@ -1,32 +1,13 @@
 {
   "project_info": {
-    "project_number": "876937112371",
-    "project_id": "itpvoice-9ea83",
-    "storage_bucket": "itpvoice-9ea83.appspot.com"
+    "project_number": "978411142854",
+    "project_id": "voice360mobile",
+    "storage_bucket": "voice360mobile.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:876937112371:android:31c76c9220110d4d92ec46",
-        "android_client_info": {
-          "package_name": "com.appicator"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCCAq0MQoIL_cjOaoNCKv3hRhYBv5DQ_xI"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:876937112371:android:1f308b6fb95f064892ec46",
+        "mobilesdk_app_id": "1:978411142854:android:322d5f317d4945392821c7",
         "android_client_info": {
           "package_name": "com.appicator.itp_voice"
         }
@@ -34,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyCCAq0MQoIL_cjOaoNCKv3hRhYBv5DQ_xI"
+          "current_key": "AIzaSyAwmhPKLNseEmT7AwTsya5jNyDSlq-Tzp8"
         }
       ],
       "services": {

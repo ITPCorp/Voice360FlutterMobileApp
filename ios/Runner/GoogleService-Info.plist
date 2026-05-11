@@ -3,17 +3,17 @@
 <plist version="1.0">
 <dict>
 	<key>API_KEY</key>
-	<string>AIzaSyABPf_VBC22qmwMGJztYB0BCtwWZjGECqo</string>
+	<string>AIzaSyAN1ZjmvJz1trSc_Ru1JDeXVbqPcsEXW2w</string>
 	<key>GCM_SENDER_ID</key>
-	<string>876937112371</string>
+	<string>978411142854</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.itpVoice</string>
+	<string>com.let.itpovice360</string>
 	<key>PROJECT_ID</key>
-	<string>itpvoice-9ea83</string>
+	<string>voice360mobile</string>
 	<key>STORAGE_BUCKET</key>
-	<string>itpvoice-9ea83.appspot.com</string>
+	<string>voice360mobile.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -25,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:876937112371:ios:f7414eb5c638472192ec46</string>
+	<string>1:978411142854:ios:4cc2fd7bd59364282821c7</string>
 </dict>
 </plist>
