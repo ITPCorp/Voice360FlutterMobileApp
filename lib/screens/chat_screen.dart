@@ -17,9 +17,21 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final ChatController con = Get.put(ChatController());
+  // Force-replace the controller on every screen mount so a re-navigation
+  // (eg. from a notification tap landing on a different thread) re-runs
+  // onInit and re-parses Get.arguments. Without this, GetX silently
+  // returns the prior thread's controller and the screen renders the
+  // stale conversation.
+  late final ChatController con = _freshController();
   final BaseScreenController base = Get.find<BaseScreenController>();
   final ScrollController _scroll = ScrollController();
+
+  ChatController _freshController() {
+    if (Get.isRegistered<ChatController>()) {
+      Get.delete<ChatController>(force: true);
+    }
+    return Get.put(ChatController());
+  }
 
   @override
   void dispose() {

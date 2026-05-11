@@ -16,6 +16,38 @@ import 'package:itp_voice/widgets/custom_toast.dart';
 
 class BaseRequester {
   AuthRepo _authRepo = AuthRepo();
+
+  /// Re-entry guard: when an API hits 401 we call `logoutUser()` which itself
+  /// hits `/auth/logout` — a 401 from THAT call must not retrigger the
+  /// handler or we recurse forever (we hit that bug live; the app spammed
+  /// thousands of /auth/logout calls per second).
+  bool _unauthorizedHandled = false;
+
+  /// Centralized handler for 401 responses. Idempotent — safe to call from
+  /// any HTTP verb's response branch.
+  Future<void> _handleUnauthorized() async {
+    if (_unauthorizedHandled) return;
+    _unauthorizedHandled = true;
+    try {
+      await _authRepo.logoutUser();
+    } catch (_) {/* logout request can itself fail; ignore */}
+    // Best-effort remember-me decision. Treat missing as false.
+    final rememberMe =
+        SharedPreferencesMethod.getBool(StorageKeys.REMEMBER) ?? false;
+    if (rememberMe) {
+      // Try silent re-login if creds were saved.
+      try {
+        await _authRepo.reLoginUser();
+      } catch (_) {}
+    }
+    Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
+    CustomToast.showToast('Session expired, please log in again', true);
+    // Reset the guard after the user lands on the login screen so a future
+    // session can also trigger the handler.
+    Future.delayed(const Duration(seconds: 2), () {
+      _unauthorizedHandled = false;
+    });
+  }
   // late String baseURL = "https://gym.vidseries.com/";
   // late String BearerImageUrl = "https://gym.vidseries.com/";
   late String BearerImageUrl = "https://gym.globalcaregroup.net/";
@@ -88,41 +120,8 @@ class BaseRequester {
         }
         return jsonData;
       } else if (response.statusCode == 401) {
-        _authRepo.logoutUser();
-        final bool rememberMe =  SharedPreferencesMethod.getBool(StorageKeys.REMEMBER)!;
-        if(rememberMe){
-          Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-          CustomToast.showToast("Session expired, Please login again", true);
-          return response.statusCode;
-        }else{
-          var tryRelogin = await _authRepo.reLoginUser();
-          ///Commented
-          // if (tryRelogin.runtimeType == String) {
-          //   _authRepo.logoutUser();
-          //   Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-          //   CustomToast.showToast("Session expired, Please login again", true);
-          //   return;
-          // }
-          // if (tryRelogin) {
-          //   final response = await baseGetAPI(url);
-          //   return response;
-          // }
-          if (tryRelogin.runtimeType == String) {
-            CustomToast.showToast(tryRelogin.toString(), true);
-
-            return;
-          }
-          if (tryRelogin == null) {
-            CustomToast.showToast("Unexpected error occurred", true);
-
-            return;
-          } else {
-            await locator<NumbersService>().getUpdatedNumbersList();
-            Get.offAllNamed(Routes.BASE_SCREEN_ROUTE);
-          }
-        }
-
-
+        await _handleUnauthorized();
+        return response.statusCode;
       } else {
         jsonData = json.decode(response.body);
       }
@@ -215,51 +214,8 @@ class BaseRequester {
         jsonData = json.decode(response.body);
         return jsonData;
       } else if (response.statusCode == 401) {
-        // _authRepo.logoutUser();
-        // Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-        // CustomToast.showToast("Session expired, Please login again", true);
-        // return;
-        _authRepo.logoutUser();
-        final bool rememberMe =  SharedPreferencesMethod.getBool(StorageKeys.REMEMBER)!;
-        if(rememberMe){
-          Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-          CustomToast.showToast("Session expired, Please login again", true);
-          return response.statusCode;
-        }else{
-          var tryRelogin = await _authRepo.reLoginUser();
-          if (tryRelogin.runtimeType == String) {
-            CustomToast.showToast(tryRelogin.toString(), true);
-
-            return;
-          }
-          if (tryRelogin == null) {
-            CustomToast.showToast("Unexpected error occurred", true);
-
-            return;
-          } else {
-            await locator<NumbersService>().getUpdatedNumbersList();
-            Get.offAllNamed(Routes.BASE_SCREEN_ROUTE);
-          }
-        // if (protected == false) {
-        //   jsonData = json.decode(response.body);
-
-        //   return jsonData;
-        // }
-        // var tryRelogin = await _authRepo.reLoginUser();
-        // if (tryRelogin.runtimeType == String) {
-        //   _authRepo.logoutUser();
-        //   Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-        //   CustomToast.showToast("Session expired, Please login again", true);
-        //   return;
-        // }
-        // if (tryRelogin) {
-        //   final response = await basePostAPI(url, body, protected: protected);
-        //   return response;
-        // }
-        // jsonData = json.decode(response.body); //
-
-        // return jsonData; //
-      }
+        await _handleUnauthorized();
+        return;
       } else {
         throw Exception('Failed');
       }
@@ -316,46 +272,8 @@ class BaseRequester {
         jsonData = json.decode(response.body);
         return jsonData;
       } else if (response.statusCode == 401) {
-        _authRepo.logoutUser();
-        final bool rememberMe =  SharedPreferencesMethod.getBool(StorageKeys.REMEMBER)!;
-        if(rememberMe){
-          Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-          CustomToast.showToast("Session expired, Please login again", true);
-          return response.statusCode;
-        }else{
-          var tryRelogin = await _authRepo.reLoginUser();
-          if (tryRelogin.runtimeType == String) {
-            CustomToast.showToast(tryRelogin.toString(), true);
-
-            return;
-          }
-          if (tryRelogin == null) {
-            CustomToast.showToast("Unexpected error occurred", true);
-
-            return;
-          } else {
-            await locator<NumbersService>().getUpdatedNumbersList();
-            Get.offAllNamed(Routes.BASE_SCREEN_ROUTE);
-          }}
-        // if (protected == false) {
-        //   jsonData = json.decode(response.body);
-
-        //   return jsonData;
-        // }
-        // var tryRelogin = await _authRepo.reLoginUser();
-        // if (tryRelogin.runtimeType == String) {
-        //   _authRepo.logoutUser();
-        //   Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-        //   CustomToast.showToast("Session expired, Please login again", true);
-        //   return;
-        // }
-        // if (tryRelogin) {
-        //   final response = await basePostAPI(url, body, protected: protected);
-        //   return response;
-        // }
-        // jsonData = json.decode(response.body); //
-
-        // return jsonData; //
+        await _handleUnauthorized();
+        return;
       } else {
         throw Exception('Failed');
       }
@@ -398,38 +316,8 @@ class BaseRequester {
         // return {};
         return jsonData;
       } else if (response.statusCode == 401) {
-        _authRepo.logoutUser();
-        final bool rememberMe =  SharedPreferencesMethod.getBool(StorageKeys.REMEMBER)!;
-        if(rememberMe){
-          Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-          CustomToast.showToast("Session expired, Please login again", true);
-          return response.statusCode;
-        }else{
-          var tryRelogin = await _authRepo.reLoginUser();
-          if (tryRelogin.runtimeType == String) {
-            CustomToast.showToast(tryRelogin.toString(), true);
-
-            return;
-          }
-          if (tryRelogin == null) {
-            CustomToast.showToast("Unexpected error occurred", true);
-
-            return;
-          } else {
-            await locator<NumbersService>().getUpdatedNumbersList();
-            Get.offAllNamed(Routes.BASE_SCREEN_ROUTE);
-          }}
-        // var tryRelogin = await _authRepo.reLoginUser();
-        // if (tryRelogin.runtimeType == String) {
-        //   _authRepo.logoutUser();
-        //   Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-        //   CustomToast.showToast("Session expired, Please login again", true);
-        //   return;
-        // }
-        // if (tryRelogin) {
-        //   final response = await basePutAPI(url, body, protected: protected);
-        //   return response;
-        // }
+        await _handleUnauthorized();
+        return;
       } else {
         throw Exception('Failed');
       }
@@ -472,38 +360,8 @@ class BaseRequester {
         // return {};
         return jsonData;
       } else if (response.statusCode == 401) {
-        _authRepo.logoutUser();
-        final bool rememberMe =  SharedPreferencesMethod.getBool(StorageKeys.REMEMBER)!;
-        if(rememberMe){
-          Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-          CustomToast.showToast("Session expired, Please login again", true);
-          return response.statusCode;
-        }else{
-          var tryRelogin = await _authRepo.reLoginUser();
-          if (tryRelogin.runtimeType == String) {
-            CustomToast.showToast(tryRelogin.toString(), true);
-
-            return;
-          }
-          if (tryRelogin == null) {
-            CustomToast.showToast("Unexpected error occurred", true);
-
-            return;
-          } else {
-            await locator<NumbersService>().getUpdatedNumbersList();
-            Get.offAllNamed(Routes.BASE_SCREEN_ROUTE);
-          }}
-        // var tryRelogin = await _authRepo.reLoginUser();
-        // if (tryRelogin.runtimeType == String) {
-        //   _authRepo.logoutUser();
-        //   Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-        //   CustomToast.showToast("Session expired, Please login again", true);
-        //   return;
-        // }
-        // if (tryRelogin) {
-        //   final response = await baseDeleteAPI(url, body, protected: protected);
-        //   return response;
-        // }
+        await _handleUnauthorized();
+        return;
       } else {
         throw Exception('Failed');
       }

@@ -126,6 +126,16 @@ class PushService {
           badge: true,
           sound: true,
         );
+        // On iOS, FCM can only produce a token after APNs has registered
+        // the device. Wait briefly for the APNs token before asking FCM
+        // for a token, otherwise getToken() throws "apns-token-not-set".
+        if (Platform.isIOS) {
+          for (var i = 0; i < 10; i++) {
+            final apns = await FirebaseMessaging.instance.getAPNSToken();
+            if (apns != null) break;
+            await Future.delayed(const Duration(milliseconds: 500));
+          }
+        }
         final token = await FirebaseMessaging.instance.getToken();
         _cachedToken = token;
         // ignore: avoid_print
@@ -229,6 +239,16 @@ class PushService {
     String? toPhoneNumber,
     String? fromNumber,
   }) {
+    // ignore: avoid_print
+    print('[Push] navigate → thread=$threadId to=$toPhoneNumber from=$fromNumber');
+    // If we're already sitting in a chat screen (possibly for a different
+    // thread), Get.toNamed against the same route silently no-ops the
+    // initState path → ChatController is reused and Get.arguments is never
+    // re-parsed. Pop the existing chat first so the next push mounts a
+    // fresh _ChatScreenState (which then force-replaces the controller).
+    if (Get.currentRoute == Routes.CHAT_SCREEN_ROUTE) {
+      Get.until((route) => route.settings.name != Routes.CHAT_SCREEN_ROUTE);
+    }
     Get.toNamed(
       Routes.CHAT_SCREEN_ROUTE,
       arguments: [threadId, toPhoneNumber, fromNumber],
