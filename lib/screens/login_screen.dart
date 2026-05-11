@@ -1,12 +1,8 @@
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/login_controller.dart';
 import 'package:itp_voice/design/v360.dart';
-import 'package:itp_voice/main.dart' show firebaseReady;
-import 'package:itp_voice/notification_service.dart';
-import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -32,48 +28,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final LoginController con = Get.put(LoginController());
   bool _obscure = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _wirePushHandlers();
-  }
-
-  void _wirePushHandlers() {
-    // Without Firebase initialized (iOS pre-GoogleService-Info.plist), every
-    // FirebaseMessaging touch throws `[core/no-app]`. No-op out cleanly.
-    if (!firebaseReady) return;
-    FirebaseMessaging.instance.getInitialMessage().then((message) async {
-      if (message?.data == null) return;
-      final data = message!.data;
-      if (data.containsKey('message_thread_id')) {
-        await Get.toNamed(
-          Routes.CHAT_SCREEN_ROUTE,
-          arguments: [data['message_thread_id'], data['to_phone_number'], null],
-        );
-        if (con.initializedd == true) {
-          Get.offAllNamed(Routes.BASE_SCREEN_ROUTE);
-        }
-      }
-    });
-
-    FirebaseMessaging.onMessage.listen((message) {
-      if (message.notification == null) return;
-      if (Get.currentRoute != Routes.CHAT_SCREEN_ROUTE) {
-        LocalNotificationService.createanddisplaynotification(message);
-      }
-    });
-
-    FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      final data = message.data;
-      if (data.containsKey('message_thread_id')) {
-        Get.toNamed(
-          Routes.CHAT_SCREEN_ROUTE,
-          arguments: [data['message_thread_id'], data['to_phone_number'], null],
-        );
-      }
-    });
-  }
+  // FCM listeners moved to PushService (see services/push_service.dart) so
+  // tap-handling and foreground banners work no matter which screen is up.
 
   @override
   Widget build(BuildContext context) {

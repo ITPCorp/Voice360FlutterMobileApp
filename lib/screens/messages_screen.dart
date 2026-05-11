@@ -53,7 +53,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
           IconButton(
             icon: const Icon(Icons.edit_square),
             tooltip: 'New message',
-            onPressed: () => con.sendNewMessage(context),
+            onPressed: () => Get.toNamed(Routes.NEW_MESSAGE_ROUTE),
           ),
         ],
       ),
@@ -90,7 +90,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   action: V360Button(
                     label: 'New message',
                     leadingIcon: Icons.edit_square,
-                    onPressed: () => con.sendNewMessage(context),
+                    onPressed: () => Get.toNamed(Routes.NEW_MESSAGE_ROUTE),
                   ),
                 );
               }

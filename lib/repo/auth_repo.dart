@@ -9,9 +9,12 @@ import 'package:itp_voice/models/login_request_model.dart';
 import 'package:itp_voice/models/services_response_model/service.dart';
 import 'package:itp_voice/models/services_response_model/services_response_model.dart';
 import 'package:itp_voice/models/user_profile_model/user_profile.dart';
+import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/repo/base_requester.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/global_socket_service.dart';
+import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/storage_keys.dart';
 
 
@@ -132,13 +135,11 @@ class AuthRepo {
   loginUser(String email, String password, bool rememberMe) async {
     LoginRequestModel body = LoginRequestModel(username: email, password: password);
     Map loginBody = body.toMap();
-    if (firebaseReady) {
-      try {
-        await FirebaseMessaging.instance.deleteToken();
-        loginBody['mobile_device_id'] = await FirebaseMessaging.instance.getToken();
-      } catch (e) {
-        print('Firebase token fetch failed: $e');
-      }
+    // Push registration: request OS permission, fetch current FCM token, and
+    // send it to the backend so it can target this device for SMS/call pushes.
+    final pushToken = await locator<PushService>().onLoginSuccess();
+    if (pushToken != null && pushToken.isNotEmpty) {
+      loginBody['mobile_device_id'] = pushToken;
     }
     print('DEVICE TOKEN: ' + (loginBody['mobile_device_id']?.toString() ?? 'null'));
     final apiResponse = await BaseRequesterMethods.baseRequester
@@ -213,8 +214,15 @@ class AuthRepo {
       // Authorization header on the refresh call below.
       await SharedPreferencesMethod.setString(StorageKeys.REFRESH_TOKEN, ssoToken);
 
-      final apiResponse = await BaseRequesterMethods.baseRequester
-          .baseGetAPI(Endpoints.REFRESH_TOKEN_URL);
+      // Get an FCM token to pass to the backend so this device can receive
+      // push notifications. Refresh endpoint accepts `?mobile_device_id=`.
+      final pushToken = await locator<PushService>().onLoginSuccess();
+      var refreshUrl = Endpoints.REFRESH_TOKEN_URL;
+      if (pushToken != null && pushToken.isNotEmpty) {
+        refreshUrl = '$refreshUrl?mobile_device_id=$pushToken';
+      }
+      final apiResponse =
+          await BaseRequesterMethods.baseRequester.baseGetAPI(refreshUrl);
       if (apiResponse == null) {
         await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
         return 'Could not complete sign-in. Please try again.';
@@ -328,13 +336,12 @@ class AuthRepo {
     await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
     await SharedPreferencesMethod.storage.remove(StorageKeys.APPUSER_DATA);
     await SharedPreferencesMethod.storage.remove(StorageKeys.TIME_ZONE);
-    if (firebaseReady) {
-      try {
-        await FirebaseMessaging.instance.deleteToken();
-      } catch (e) {
-        print('Firebase deleteToken failed: $e');
-      }
-    }
+    try {
+      await locator<GlobalSocketService>().disconnect();
+    } catch (_) {}
+    try {
+      await locator<PushService>().onLogout();
+    } catch (_) {}
     try {
       await BaseRequesterMethods.baseRequester.baseGetAPI(Endpoints.LOGOUT_URL);
     } catch (e) {

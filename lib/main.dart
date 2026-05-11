@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
@@ -10,8 +11,8 @@ import 'package:itp_voice/cache/cache_service.dart';
 import 'package:itp_voice/controllers/bindings.dart';
 import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/locator.dart';
-import 'package:itp_voice/notification_service.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/push_service.dart';
 import 'package:timezone/data/latest_all.dart';
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -56,19 +57,37 @@ Future<void> main() async {
   // iOS without it — but SIP/SMS/calls do. Android continues to auto-init
   // via the FirebaseInitProvider when google-services.json is present.
   if (!Platform.isIOS) {
+    // On Android the `google-services` Gradle plugin embeds a content
+    // provider that auto-registers the [DEFAULT] FirebaseApp before main()
+    // even runs. It can finish between our probe and our init call, so the
+    // safe pattern is: try, and if we hit the "already exists" race, treat
+    // it as a success — the native init landed and Firebase is ready.
     try {
-      if (Firebase.apps.isEmpty) {
+      Firebase.app();
+    } catch (_) {
+      try {
         await Firebase.initializeApp(options: _kFirebaseOptions);
+      } catch (e) {
+        final msg = e.toString().toLowerCase();
+        if (!msg.contains('already exists')) {
+          // Real failure (eg. bad config). Surface and bail.
+          // ignore: avoid_print
+          print('Firebase init failed: $e');
+        }
       }
+    }
+    try {
       FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
       firebaseReady = true;
-    } catch (e, st) {
+    } catch (e) {
       // ignore: avoid_print
-      print('Firebase init failed: $e\n$st');
+      print('Firebase onBackgroundMessage register failed: $e');
     }
   }
   setupLocator();
-  LocalNotificationService.initialize();
+  // PushService owns the FCM pipeline: foreground banners, taps, deep-links,
+  // plus the local-notifications channel setup. Fire-and-forget.
+  unawaited(locator<PushService>().initialize());
   initializeTimeZones();
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

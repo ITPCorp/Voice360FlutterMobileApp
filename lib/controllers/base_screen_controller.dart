@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as flwebrtc;
 import 'package:get/get.dart';
 import 'package:itp_voice/helpers/config.dart';
+import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -24,6 +26,10 @@ class BaseScreenController extends GetxController
     helper = Get.find<SIPUAHelper>();
     _bindEventListeners();
     loadSettings();
+    // Bring up the platform-wide notification socket (SMS, call events, etc.)
+    // once the user is logged in and the base screen mounts. Fire-and-forget;
+    // failures are handled with auto-reconnect inside the service.
+    locator<GlobalSocketService>().connect();
     super.onInit();
   }
 

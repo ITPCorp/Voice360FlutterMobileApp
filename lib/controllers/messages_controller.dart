@@ -1,18 +1,14 @@
-import 'package:floating_bottom_bar/animated_bottom_navigation_bar.dart';
-import 'package:flutter/cupertino.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart';
 import 'package:itp_voice/repo/messages_repo.dart';
 import 'package:itp_voice/cache/cache_service.dart';
+import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/numbers_service.dart';
 import 'package:itp_voice/services/threads_cache.dart';
-import 'package:itp_voice/widgets/app_button.dart';
-import 'package:itp_voice/widgets/app_textfield.dart';
-import 'package:itp_voice/widgets/phone_number_field.dart';
-
-import '../widgets/custom_toast.dart';
 
 class MessagesController extends GetxController {
   MessagesRepo repo = MessagesRepo();
@@ -43,6 +39,11 @@ class MessagesController extends GetxController {
   bool get hasMore => !_reachedEnd;
 
   bool _hydratedFromCache = false;
+
+  /// Subscription to the global notification socket — bumps the threads list
+  /// when an SMS event arrives so previews and unread counts stay live.
+  StreamSubscription<GlobalSocketEvent>? _socketSub;
+  Timer? _socketDebounce;
 
   /// Read whatever threads we persisted last time and render them. Cheap;
   /// runs synchronously off the open Hive box.
@@ -137,27 +138,6 @@ class MessagesController extends GetxController {
     isloading.value = false;
   }
 
-  sendNewMessage(BuildContext context) async {
-    final res = await showDialog(
-      context: context,
-      builder: (childContext) => AddThreadDialog(),
-    );
-    print(res);
-    if (res is List) {
-      if (selectedNumber == null || selectedNumber!.isEmpty) {
-        CustomToast.showToast(
-          'Please select a number to send from first',
-          true,
-        );
-        return;
-      }
-      isloading.value = true;
-      final numberString = "{\"list\": [\"${res[0]}\"]}";
-      await repo.sendMessage(selectedNumber!, res[1], numberString);
-      await loadThreads();
-    }
-  }
-
   @override
   void onInit() async {
     if (numbers.isEmpty) {
@@ -166,76 +146,31 @@ class MessagesController extends GetxController {
     if (numbers.isNotEmpty) {
       selectedNumber = numbers[0];
     }
+    _subscribeToGlobalSocket();
     loadThreads();
     super.onInit();
   }
-}
-
-class AddThreadDialog extends StatelessWidget {
-  const AddThreadDialog({
-    Key? key,
-  }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    String code = "1";
-    TextEditingController number = TextEditingController();
-    String message = "";
-    return Material(
-      type: MaterialType.transparency,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(15),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "To",
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              PhoneNumberField(
-                hint: "XXXXXXXXXX",
-                textController: number,
-                onChanged: (value) {
-                  code = value;
-                },
-              ),
-              const SizedBox(height: 15),
-              Text(
-                "Message",
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              AppTextField(
-                hint: "Enter message",
-                onChanged: (value) => message = value,
-              ),
-              const SizedBox(height: 10),
-              GestureDetector(
-                  onTap: () => Navigator.of(context).pop([
-                        "+${code}${number.text}",
-                        message,
-                      ]),
-                  child: AppButton(
-                    text: "Send",
-                  )),
-            ],
-          ),
-        ),
-      ),
-    );
+  void onClose() {
+    _socketDebounce?.cancel();
+    _socketSub?.cancel();
+    super.onClose();
+  }
+
+  /// Refresh the threads list whenever an SMS arrives on the global socket.
+  /// Debounced so a burst of events doesn't spam the API.
+  void _subscribeToGlobalSocket() {
+    _socketSub?.cancel();
+    final socket = locator<GlobalSocketService>();
+    socket.connect();
+    _socketSub = socket.events.listen((event) {
+      if (!event.isAnySms) return;
+      _socketDebounce?.cancel();
+      _socketDebounce = Timer(const Duration(milliseconds: 600), () {
+        loadThreads();
+      });
+    });
   }
 }
+

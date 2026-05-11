@@ -44,7 +44,7 @@ android {
 
     defaultConfig {
         applicationId = "com.appicator.itp_voice"
-        minSdkVersion 23
+        minSdkVersion flutter.minSdkVersion
         targetSdkVersion 35
         versionCode 101
         versionName "1.2.1"

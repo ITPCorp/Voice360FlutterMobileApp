@@ -5,14 +5,15 @@ import 'package:itp_voice/screens/add_new_contact.dart';
 import 'package:itp_voice/screens/base_screen.dart';
 import 'package:itp_voice/screens/call_history_screen.dart';
 import 'package:itp_voice/screens/call_screen.dart';
-import 'package:itp_voice/screens/call_settings_screen.dart';
 import 'package:itp_voice/screens/change_password_screen.dart';
 import 'package:itp_voice/screens/chat_info_screen.dart';
 import 'package:itp_voice/screens/chat_screen.dart';
 import 'package:itp_voice/screens/contact_details_screen.dart';
+import 'package:itp_voice/screens/debug_screen.dart';
 import 'package:itp_voice/screens/edit_contact_screen.dart';
 import 'package:itp_voice/screens/in_call_dialpad.dart';
 import 'package:itp_voice/screens/login_screen.dart';
+import 'package:itp_voice/screens/new_message_screen.dart';
 import 'package:itp_voice/screens/settings_screen.dart';
 import 'package:itp_voice/screens/voice_mail_details_screen.dart';
 
@@ -32,10 +33,6 @@ class AppRoutes {
     GetPage(
       name: Routes.SETTINGS_SCREEN_ROUTE,
       page: () => SettingsScreen(),
-    ),
-    GetPage(
-      name: Routes.CALL_SETTINGS_ROUTE,
-      page: () => CallSettingsScreen(),
     ),
     GetPage(
       name: Routes.CHANGE_PASSWORD_ROUTE,
@@ -69,6 +66,14 @@ class AppRoutes {
       name: Routes.CHAT_DETAIL_ROUTE,
       page: () => ChatInfoScreen(),
     ),
+    GetPage(
+      name: Routes.NEW_MESSAGE_ROUTE,
+      page: () => const NewMessageScreen(),
+    ),
+    GetPage(
+      name: Routes.DEBUG_ROUTE,
+      page: () => const DebugScreen(),
+    ),
   ];
 }
 
@@ -79,7 +84,6 @@ class Routes {
   static String CALL_HISTORY_SCREEN_ROUTE = '/call_history_screen_route';
   static String CONTACT_DETAIS_SCREEN_ROUTE = '/contact_details_screen_route';
   static String SETTINGS_SCREEN_ROUTE = '/settings_screen_route';
-  static String CALL_SETTINGS_ROUTE = '/call_settings_route';
   static String CHANGE_PASSWORD_ROUTE = '/change_password_route';
   static String ADD_NEW_CONTACT_ROUTE = '/add_new_contact_screen_route';
   static String CHAT_SCREEN_ROUTE = '/chat_screen_route';
@@ -87,6 +91,8 @@ class Routes {
   static String DIALPAD_SCREEN_ROUTE = '/dialpad_screen_route';
   static String EDIT_CONTACT_ROUTE = '/edit_contact_screen_route';
   static String CHAT_DETAIL_ROUTE = '/chat_detail_screen_route';
+  static String NEW_MESSAGE_ROUTE = '/new_message_screen_route';
+  static String DEBUG_ROUTE = '/debug';
 }
 
 class Endpoints {
@@ -153,6 +159,13 @@ class Endpoints {
 
   static String GET_USER_DATA(api_id) {
     return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension";
+  }
+
+  /// All numbers assigned to the extension. Used to populate the outbound
+  /// caller ID dropdown — mirrors voice360-fe's `viewNumbers` (admin)
+  /// dropped down to the user scope.
+  static String GET_MY_EXTENSION_NUMBERS(api_id) {
+    return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/numbers";
   }
 
   static String GET_CALL_HISTORY(api_id, offset, {int? startMs, int? endMs}) {

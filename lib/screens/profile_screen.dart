@@ -17,10 +17,7 @@ class ProfileScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.settings_outlined),
             tooltip: 'Settings',
-            onPressed: () => Get.toNamed(
-              Routes.SETTINGS_SCREEN_ROUTE,
-              arguments: con.mobileController.text,
-            ),
+            onPressed: () => Get.toNamed(Routes.SETTINGS_SCREEN_ROUTE),
           ),
         ],
       ),
@@ -66,38 +63,6 @@ class ProfileScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: V360Spacing.s5),
-              _SectionLabel(text: 'PREFERENCES'),
-              const SizedBox(height: V360Spacing.s2),
-              V360Card(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: [
-                    _NavRow(
-                      icon: Icons.tune_rounded,
-                      label: 'Settings',
-                      onTap: () => Get.toNamed(
-                        Routes.SETTINGS_SCREEN_ROUTE,
-                        arguments: con.mobileController.text,
-                      ),
-                    ),
-                    const _Sep(),
-                    _NavRow(
-                      icon: Icons.phone_callback_rounded,
-                      label: 'Call settings',
-                      onTap: () =>
-                          Get.toNamed(Routes.CALL_SETTINGS_ROUTE),
-                    ),
-                    const _Sep(),
-                    _NavRow(
-                      icon: Icons.lock_outline_rounded,
-                      label: 'Change password',
-                      onTap: () =>
-                          Get.toNamed(Routes.CHANGE_PASSWORD_ROUTE),
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: V360Spacing.s10),
             ],
           ),
@@ -107,21 +72,50 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-class _ProfileHeader extends StatelessWidget {
+class _ProfileHeader extends StatefulWidget {
   final ProfileController con;
   const _ProfileHeader({required this.con});
+
+  @override
+  State<_ProfileHeader> createState() => _ProfileHeaderState();
+}
+
+class _ProfileHeaderState extends State<_ProfileHeader> {
+  // 7-tap Android-style easter egg on the avatar to open the debug screen.
+  int _avatarTaps = 0;
+  DateTime? _firstTap;
+
+  void _onAvatarTap() {
+    final now = DateTime.now();
+    if (_firstTap == null ||
+        now.difference(_firstTap!) > const Duration(seconds: 5)) {
+      _firstTap = now;
+      _avatarTaps = 1;
+      return;
+    }
+    _avatarTaps++;
+    if (_avatarTaps >= 7) {
+      _avatarTaps = 0;
+      _firstTap = null;
+      Get.toNamed(Routes.DEBUG_ROUTE);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final cs = Theme.of(context).colorScheme;
-    final name = con.nameController.text.trim();
-    final email = con.emailController.text.trim();
+    final name = widget.con.nameController.text.trim();
+    final email = widget.con.emailController.text.trim();
     return V360Card(
       padding: const EdgeInsets.all(V360Spacing.s5),
       child: Row(
         children: [
-          V360Avatar(name: name.isEmpty ? '?' : name, size: 64),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _onAvatarTap,
+            child: V360Avatar(name: name.isEmpty ? '?' : name, size: 64),
+          ),
           const SizedBox(width: V360Spacing.s4),
           Expanded(
             child: Column(
@@ -212,47 +206,6 @@ class _Row extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _NavRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  const _NavRow({required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: V360Spacing.s4,
-          vertical: V360Spacing.s4,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: cs.primary, size: 20),
-            const SizedBox(width: V360Spacing.s3),
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            Icon(
-              Icons.chevron_right_rounded,
-              color: cs.onSurfaceVariant,
-              size: 22,
-            ),
-          ],
-        ),
       ),
     );
   }

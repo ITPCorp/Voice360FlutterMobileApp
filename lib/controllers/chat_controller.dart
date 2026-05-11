@@ -1,26 +1,20 @@
 import 'dart:async';
-import 'dart:convert';
 
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:itp_voice/locator.dart';
-import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart'
     as thr;
 import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart';
-import 'package:itp_voice/notification_service.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/cache/cache_service.dart';
+import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/numbers_service.dart';
 import 'package:itp_voice/services/threads_cache.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../models/get_contacts_reponse_model/contact_response.dart';
 import '../repo/messages_repo.dart';
-import '../repo/shares_preference_repo.dart';
-import '../storage_keys.dart';
 import '../widgets/custom_toast.dart';
 
 /// Chat controller — supports two modes:
@@ -86,15 +80,13 @@ class ChatController extends GetxController {
   GetThreadMessagesResponseModel? get messages => _messages.value;
 
   TextEditingController messageController = TextEditingController();
-  StreamSubscription? channelSubscription;
 
-  bool socketConnected = false;
-  Timer? reconnector;
+  /// Subscription to the global notification socket (lifetime = chat screen).
+  StreamSubscription<GlobalSocketEvent>? _socketSub;
 
   @override
   void onClose() {
-    reconnector?.cancel();
-    channelSubscription?.cancel();
+    _socketSub?.cancel();
     super.onClose();
   }
 
@@ -263,108 +255,120 @@ class ChatController extends GetxController {
     if (tid != null) {
       repo.markAsRead(tid, myNumber);
     }
-    _connectWebsocket();
-    _wireFcmListener();
+    _subscribeToGlobalSocket();
+    // FCM banner display + tap routing is handled by PushService now.
   }
 
-  void _connectWebsocket() {
-    channelSubscription?.cancel();
-    reconnector?.cancel();
-    channelSubscription = messageSocketConnect().listen(
-      (body) {
-        final tid = threadId.value;
-        if (tid != null) {
-          try {
-            repo.markAsRead(tid, myNumber);
-          } catch (_) {}
+  /// Subscribe to SMS events from the platform-wide notification socket
+  /// and route ones matching this thread into the visible message list.
+  /// Mirrors the web client's RealChatContainer.jsx event handling.
+  void _subscribeToGlobalSocket() {
+    _socketSub?.cancel();
+    final socket = locator<GlobalSocketService>();
+    // Ensure the socket is up. Idempotent — does nothing if already connected.
+    socket.connect();
+    _socketSub = socket.events.listen(_handleSocketEvent);
+  }
+
+  void _handleSocketEvent(GlobalSocketEvent event) {
+    if (!event.isAnySms) return;
+    final reader = SmsEventReader(event);
+
+    // Filter to this thread. Direction matters:
+    //  - sms.received: payload's from_number is the peer (== threadNumber)
+    //  - sms.sent:     payload's from_number is OUR number; the peer is
+    //                  to_number (or to_numbers_list[0]). Compare that
+    //                  against threadNumber.
+    // Also accept a direct message_thread_id match when present.
+    final eventThreadId = reader.threadId;
+    final myTid = threadId.value;
+    final fromNum = reader.fromNumber;
+    final toNum = reader.toNumber;
+    final peer = event.isSmsSent ? toNum : fromNum;
+    final matchesThisThread = (myTid != null &&
+            eventThreadId != null &&
+            eventThreadId == myTid) ||
+        (peer != null && _digitsEqual(peer, threadNumber));
+    if (!matchesThisThread) return;
+
+    final pk = reader.messagePk;
+    final providerId = reader.providerId; // sms_id from the WS event
+    final body = reader.body ?? '';
+    final list = _messages.value?.result?.messages;
+
+    int existingIdx = -1;
+    if (list != null) {
+      existingIdx = list.indexWhere((m) {
+        // 1. Exact id match (when the WS payload includes one).
+        if (pk != null && m.pk == pk) return true;
+        // 2. Exact provider-id match (after the first sms.sent has populated it).
+        if (providerId != null && m.messageProviderId == providerId) {
+          return true;
         }
-        handleWebsocketResponce(body);
-      },
-      onDone: () {
-        socketConnected = false;
-        reconnector = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
-          if (socketConnected) return;
-          socketConnected = true;
-          channelSubscription?.cancel();
-          channelSubscription = messageSocketConnect().listen(
-            (body) {
-              final tid = threadId.value;
-              if (tid != null) {
-                try {
-                  repo.markAsRead(tid, myNumber);
-                } catch (_) {}
-              }
-              handleWebsocketResponce(body);
-            },
-            onDone: () => socketConnected = false,
-          );
-        });
-      },
-    );
-  }
+        // 3. For sms.sent: fingerprint-match against an outbound `pending`
+        //    bubble we just POSTed. Same body, undelivered, very recent.
+        //    The POST response carries no provider id and the WS event
+        //    carries no pk, so this is the only way to bind them.
+        if (event.isSmsSent &&
+            m.messageProviderId == null &&
+            (m.messageStatus?.toLowerCase() == 'pending') &&
+            (m.messageBody ?? '') == body) {
+          return true;
+        }
+        return false;
+      });
+    }
 
-  void _wireFcmListener() {
-    if (!firebaseReady) return;
-    FirebaseMessaging.onMessage.listen((message) {
-      if (message.notification == null) return;
-      if (Get.currentRoute != Routes.CHAT_SCREEN_ROUTE) {
-        LocalNotificationService.createanddisplaynotification(message);
-      }
-    });
-  }
+    if (existingIdx != -1) {
+      final msg = list![existingIdx];
+      msg.isDelivered = true;
+      if (providerId != null) msg.messageProviderId = providerId;
+      final newStatus = reader.status ?? (event.isSmsSent ? 'delivered' : null);
+      if (newStatus != null) msg.messageStatus = newStatus;
+      _persistMessagesToCache();
+      isLoading.refresh();
+      return;
+    }
 
-  void handleWebsocketResponce(dynamic bod) {
-    dynamic body = jsonDecode(bod);
+    // No match → insert as a fresh bubble (typical for sms.received).
     try {
-      if (body['payload'] == 'Unauthorized') {
-        CustomToast.showToast('Chat connection failed (unauthorized)', true);
-        return;
-      }
-      socketConnected = true;
-      if (body['message_type'] == 'sms-status' || body['message_type'] == 'sms') {
-        final payload = jsonDecode(body['payload']);
-        if (payload['message_status'] != null) {
-          final providerId = payload['message_provider_id'];
-          final index = messages?.result?.messages?.indexWhere(
-                (e) => e.messageProviderId == providerId,
-              ) ??
-              -1;
-          if (index != -1 && _messages.value != null) {
-            _messages.value!.result!.messages![index].isDelivered = true;
-          } else {
-            try {
-              if (payload['from_number'] == threadNumber) {
-                _messages.value?.result?.messages?.insert(
-                  0,
-                  Messages.fromPayload(payload as Map<String, dynamic>),
-                );
-              }
-            } catch (_) {}
-          }
-          isLoading.refresh();
-        }
-      }
+      final legacy = reader.toLegacyPayload();
+      final inserted = Messages.fromPayload(legacy);
+      if (pk != null) inserted.pk = pk;
+      if (providerId != null) inserted.messageProviderId = providerId;
+      list?.insert(0, inserted);
+      _persistMessagesToCache();
+      isLoading.refresh();
     } catch (e) {
       // ignore: avoid_print
-      print('WS parse error: $e');
+      print('Socket insert failed: $e');
+    }
+
+    // Best-effort mark-read while we're looking at the thread.
+    if (myTid != null) {
+      try {
+        repo.markAsRead(myTid, myNumber);
+      } catch (_) {}
     }
   }
 
-  Stream messageSocketConnect() {
-    final apiId = SharedPreferencesMethod.getString(StorageKeys.API_ID);
-    final connection = WebSocketChannel.connect(
-      Uri.parse('wss://websockets.api.itp247.com/sms'),
-    );
-    final token = SharedPreferencesMethod.storage.getString(StorageKeys.REFRESH_TOKEN);
-    connection.sink.add(jsonEncode({
-      'action': 'login',
-      'payload': {
-        'account_id': '$apiId',
-        'jwt_token': token,
-        'phone_number': myNumber,
-      },
-    }));
-    return connection.stream;
+  /// Phone-number compare ignoring punctuation and a leading `1`.
+  /// Mirrors the web's normalizePhone in RealChatContainer.jsx.
+  bool _digitsEqual(String? a, String? b) {
+    if (a == null || b == null) return false;
+    final na = a.replaceAll(RegExp(r'[^0-9]'), '');
+    final nb = b.replaceAll(RegExp(r'[^0-9]'), '');
+    final sa = na.startsWith('1') ? na.substring(1) : na;
+    final sb = nb.startsWith('1') ? nb.substring(1) : nb;
+    return sa == sb && sa.isNotEmpty;
+  }
+
+  void _persistMessagesToCache() {
+    final tid = threadId.value;
+    if (tid == null) return;
+    if (!AppCache.instance.isReady) return;
+    if (_messages.value == null) return;
+    AppCache.instance.messages.write(tid, _messages.value!);
   }
 
   RxBool loadTitle = false.obs;

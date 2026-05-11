@@ -145,7 +145,10 @@ class Messages {
 
   Messages.fromJson(Map<String, dynamic> json) {
     messageStatus = json['message_status'];
-    pk = json['pk'];
+    // POST /chat/sms send response uses `id`; GET thread response uses `pk`.
+    // Tolerate both so the locally-inserted bubble can be matched against
+    // the WS sms.sent event that arrives moments later.
+    pk = (json['pk'] as num?)?.toInt() ?? (json['id'] as num?)?.toInt();
     messageBody = json['message_body'];
     messageProviderId = json['message_provider_id'];
     messageMmsMedia = json['message_mms_media'];

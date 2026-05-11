@@ -162,7 +162,9 @@ class BaseRequester {
           ),
         );
         if (resp.statusCode == 200) {
-          print("Check 1"+resp.data);
+          // Note: resp.data is decoded JSON (Map), not a String, so concatenating
+          // with a literal would throw. Use string interpolation if you need to log.
+          print('Check 1 ${resp.data}');
           return resp.data;
         }
         return;
