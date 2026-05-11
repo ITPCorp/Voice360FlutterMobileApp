@@ -9,15 +9,21 @@ import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/storage_keys.dart';
 
 class MessagesRepo {
-  getMessageThreads(String myNumber) async {
+  /// Pagination size for the threads list. Matches voice360-fe (15).
+  static const int kThreadsPageLimit = 15;
+
+  /// Fetch a page of SMS threads for [myNumber]. Pass [offset] = 0 for the
+  /// first page; subsequent pages add [kThreadsPageLimit] each time.
+  getMessageThreads(String myNumber, {int offset = 0}) async {
     String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
-      String number = myNumber;
-      final apiResponse = await BaseRequesterMethods.baseRequester.baseGetAPI(
-        Endpoints.GET_MESSAGE_THREADS(apiId, number),
-      );
+      final base = Endpoints.GET_MESSAGE_THREADS(apiId, myNumber);
+      final url = '$base?offset=$offset&limit=$kThreadsPageLimit';
+      final apiResponse =
+          await BaseRequesterMethods.baseRequester.baseGetAPI(url);
       if (!apiResponse['errors']) {
-        GetMessageThreadsResponseModel response = GetMessageThreadsResponseModel.fromJson(apiResponse);
+        GetMessageThreadsResponseModel response =
+            GetMessageThreadsResponseModel.fromJson(apiResponse);
         return response;
       }
       return "Something went wrong";

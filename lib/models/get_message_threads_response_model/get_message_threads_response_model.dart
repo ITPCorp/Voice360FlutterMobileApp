@@ -118,21 +118,76 @@ class Participants {
   String? number;
   bool? isSelf;
 
-  Participants({this.messageThreadId, this.pk, this.number, this.isSelf});
+  /// Server-side join of this participant to a CRM contact. Set when the
+  /// participant's phone number matched a saved contact in the account.
+  /// Voice360-fe reads `contact.firstname/lastname` to render the row title.
+  ParticipantContact? contact;
+
+  Participants({
+    this.messageThreadId,
+    this.pk,
+    this.number,
+    this.isSelf,
+    this.contact,
+  });
+
+  /// Convenience: the contact's first+last as a single trimmed string, or
+  /// `null` when no contact is embedded.
+  String? get contactName {
+    final c = contact;
+    if (c == null) return null;
+    final full = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
+    return full.isEmpty ? null : full;
+  }
 
   Participants.fromJson(Map<String, dynamic> json) {
     messageThreadId = json['message_thread_id'];
     pk = json['pk'];
     number = json['number'];
     isSelf = json['is_self'];
+    final raw = json['contact'];
+    if (raw is Map) {
+      contact = ParticipantContact.fromJson(
+          raw.cast<String, dynamic>());
+    }
   }
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = new Map<String, dynamic>();
-    data['message_thread_id'] = this.messageThreadId;
-    data['pk'] = this.pk;
-    data['number'] = this.number;
-    data['is_self'] = this.isSelf;
+    final Map<String, dynamic> data = <String, dynamic>{};
+    data['message_thread_id'] = messageThreadId;
+    data['pk'] = pk;
+    data['number'] = number;
+    data['is_self'] = isSelf;
+    if (contact != null) data['contact'] = contact!.toJson();
     return data;
   }
+}
+
+/// Subset of CRM contact fields the server embeds on a thread participant.
+/// We intentionally don't pull the whole [Contact] model in here — it's a
+/// huge object with dozens of nullable fields; we only need name + pk to
+/// label a thread.
+class ParticipantContact {
+  int? pk;
+  String? firstname;
+  String? lastname;
+  String? phone;
+  String? email;
+
+  ParticipantContact({this.pk, this.firstname, this.lastname, this.phone, this.email});
+
+  ParticipantContact.fromJson(Map<String, dynamic> json)
+      : pk = (json['pk'] as num?)?.toInt(),
+        firstname = json['firstname'] as String?,
+        lastname = json['lastname'] as String?,
+        phone = json['phone'] as String?,
+        email = json['email'] as String?;
+
+  Map<String, dynamic> toJson() => {
+        'pk': pk,
+        'firstname': firstname,
+        'lastname': lastname,
+        'phone': phone,
+        'email': email,
+      };
 }

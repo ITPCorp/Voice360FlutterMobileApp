@@ -1,471 +1,261 @@
-import 'package:alphabet_list_view/alphabet_list_view.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/controllers/call_history_controller.dart';
+import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/contacts_controller.dart';
-import 'package:itp_voice/repo/call_history_repo.dart';
-import 'package:itp_voice/repo/shares_preference_repo.dart';
+import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/models/get_contacts_reponse_model/contact_response.dart';
 import 'package:itp_voice/routes.dart';
-import 'package:itp_voice/storage_keys.dart';
-import 'package:itp_voice/widgets/contact_list_shimmer.dart';
-import 'package:itp_voice/widgets/search_textfield.dart';
-import 'package:itp_voice/widgets/text_container.dart';
-import 'package:itp_voice/temp_data.dart' as repo;
 
 class ContactsScreen extends StatefulWidget {
-  ContactsScreen({Key? key}) : super(key: key);
+  const ContactsScreen({super.key});
 
   @override
   State<ContactsScreen> createState() => _ContactsScreenState();
 }
 
-final List<AlphabetListViewItemGroup> animals = [
-  for (var animalLetter in repo.animals.entries)
-    AlphabetListViewItemGroup(
-      tag: animalLetter.key,
-      children: animalLetter.value
-          .map(
-            (animal) => GestureDetector(
-              onTap: () {
-                Get.toNamed(Routes.CONTACT_DETAIS_SCREEN_ROUTE);
-              },
-              child: Container(
-                margin: EdgeInsets.symmetric(vertical: 10.h, horizontal: 10.w),
-                child: Row(
-                  mainAxisSize: MainAxisSize.max,
-                  children: [
-                    TextBox(
-                      text: animal[0],
-                    ),
-                    SizedBox(width: 15.w),
-                    Container(
-                        alignment: Alignment.centerLeft,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  "${animal}",
-                                  // style: ts(1, 0xff1B1A57, 14.sp, 5),
-                                  maxLines: 2,
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 15.sp,
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                                SizedBox(
-                                  width: 5.w,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ))
-                  ],
-                ),
-              ),
-            ),
-          )
-          .toList(),
-    ),
-];
-
 class _ContactsScreenState extends State<ContactsScreen> {
-  ContactsController con = Get.put(ContactsController());
-  final _scrollController = ScrollController();
+  final ContactsController con = Get.put(ContactsController());
+  final BaseScreenController base = Get.find<BaseScreenController>();
+  final ScrollController _scroll = ScrollController();
+
+  /// Debounce timer for the search field. ~280ms matches voice360-fe's
+  /// perceived feel — fast enough to feel live, slow enough that we don't
+  /// fire a request per keystroke.
+  Timer? _searchDebounce;
+  static const Duration _kSearchDebounce = Duration(milliseconds: 280);
 
   @override
   void initState() {
     super.initState();
-    con.fetchContacts('0',);
-    _scrollController.addListener(() {
-      if (_scrollController.position.pixels ==
-          _scrollController.position.maxScrollExtent) {
-        if (con.totalPages.value > con.currentPage.value) {
-          con.fetchContacts(con.conOffSet.value.toString());
-        }
+    // Always refresh on open — cache hydration in the controller already gave
+    // us something to render, so this call is silent (no shimmer flash).
+    con.fetchContacts('0');
+    _scroll.addListener(() {
+      if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 80 &&
+          !con.isContactsLoading &&
+          con.currentPage.value < con.totalPages.value &&
+          con.searchController.text.trim().isEmpty) {
+        // Only paginate the full list — when searching, the server returns
+        // the full result page at once.
+        con.fetchContacts(con.conOffSet.value.toString());
       }
     });
+  }
 
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String raw) {
+    _searchDebounce?.cancel();
+    final query = raw.trim();
+    if (query.isEmpty) {
+      // Empty → clear immediately, no debounce.
+      con.clearSearch();
+      setState(() {});
+      return;
+    }
+    // Re-render so the instant client-side filter on existing data kicks
+    // in while we wait for the server.
+    setState(() {});
+    _searchDebounce = Timer(_kSearchDebounce, () {
+      if (!mounted) return;
+      // Use the current text, not the captured `query`, in case the user kept
+      // typing during the debounce window.
+      final current = con.searchController.text.trim();
+      if (current.isEmpty) {
+        con.clearSearch();
+      } else {
+        con.searchContacts(current);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        floatingActionButton: SizedBox(
-          height: 50.h,
-          width: 50.h,
-          child: FloatingActionButton(
-            onPressed: () {
-              Get.toNamed(Routes.ADD_NEW_CONTACT_ROUTE);
-              // con.fetchContacts();
-              // SharedPreferencesMethod.storage
-              //     .setString(StorageKeys.REFRESH_TOKEN, "asdfadfasdfasdfa");
-            },
-            child: Container(
-              height: 50.h,
-              width: 50.h,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                  Theme.of(context).colorScheme.primary,
-                ]),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                Icons.add,
-                color: Colors.white,
-              ),
-            ),
-            backgroundColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(
-                Radius.circular(6),
-              ),
-            ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Contacts'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.person_add_alt_1_rounded),
+            onPressed: () => Get.toNamed(Routes.ADD_NEW_CONTACT_ROUTE),
+            tooltip: 'Add contact',
           ),
-        ),
-        appBar: AppBar(
-          actions: [
-            GestureDetector(
-              onTap: () {
-                showModalBottomSheet(
-                  context: context,
-                  useRootNavigator: true,
-                  builder: (context) {
-                    return Container(
-                      height: 180.h,
-                      padding: EdgeInsets.symmetric(horizontal: 20.w),
-                      child: Column(children: [
-                        SizedBox(height: 10.h),
-                        Divider(
-                          color: Colors.grey.shade400,
-                          thickness: 3,
-                          indent: 140.w,
-                          endIndent: 140.w,
-                        ),
-                        Align(
-                          alignment: Alignment.center,
-                          child: Text(
-                            "Actions",
-                            style: TextStyle(
-                                fontSize: 18.sp,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).colorScheme.secondary),
-                          ),
-                        ),
-                        SizedBox(
-                          height: 20.h,
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            Get.toNamed(Routes.CALL_HISTORY_SCREEN_ROUTE);
-
-                            // CallHistoryRepo().getCallHistory();
-                          },
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              "Call History",
-                              style: TextStyle(
-                                  fontSize: 18.sp,
-                                  color:
-                                      Theme.of(context).colorScheme.secondary),
-                            ),
-                          ),
-                        ),
-                        SizedBox(
-                          height: 20.h,
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            Get.toNamed(Routes.SETTINGS_SCREEN_ROUTE);
-                          },
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              "Settings",
-                              style: TextStyle(
-                                  fontSize: 18.sp,
-                                  color:
-                                      Theme.of(context).colorScheme.secondary),
-                            ),
-                          ),
-                        )
-                      ]),
-                    );
+        ],
+      ),
+      body: GetBuilder<ContactsController>(
+        builder: (_) {
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  V360Spacing.s4,
+                  V360Spacing.s2,
+                  V360Spacing.s4,
+                  V360Spacing.s3,
+                ),
+                child: V360SearchField(
+                  controller: con.searchController,
+                  hintText: 'Search contacts',
+                  onChanged: _onSearchChanged,
+                  onClear: () {
+                    _searchDebounce?.cancel();
+                    con.clearSearch();
+                    setState(() {});
                   },
-                );
-              },
-              child: Container(
-                margin: EdgeInsets.only(right: 20.w, top: 10.h),
-                child: Icon(Icons.more_vert,
-                    color: Color(0xff6B6F80), size: 22.sp),
+                ),
               ),
-            )
-          ],
-          elevation: 0,
-          backgroundColor: Colors.transparent,
-          centerTitle: true,
-          title: Container(
-            padding: EdgeInsets.only(top: 10.h),
-            child: Text(
-              "Contacts",
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.secondary,
-                fontSize: 20.sp,
-                fontWeight: FontWeight.w600,
+              Expanded(
+                child: con.isContactsLoading && con.unfilteredData.isEmpty
+                    ? const _ContactsLoading()
+                    : _buildList(context),
               ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildList(BuildContext context) {
+    final List<Contact> data = con.getDataList();
+    if (data.isEmpty) {
+      final isSearching = con.searchController.text.trim().isNotEmpty;
+      if (isSearching) {
+        if (con.isSearching) {
+          // Server search in flight, nothing to render yet.
+          return const Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
             ),
+          );
+        }
+        return V360EmptyState(
+          icon: Icons.search_off_rounded,
+          title: 'No matches',
+          message:
+              'No contacts match "${con.searchController.text.trim()}".',
+        );
+      }
+      return V360EmptyState(
+        icon: Icons.people_alt_outlined,
+        title: 'No contacts',
+        message: 'Tap the + button to add your first contact.',
+        action: V360Button(
+          label: 'Add contact',
+          leadingIcon: Icons.person_add_alt_1_rounded,
+          onPressed: () => Get.toNamed(Routes.ADD_NEW_CONTACT_ROUTE),
+        ),
+      );
+    }
+
+    final isSearching = con.searchController.text.trim().isNotEmpty;
+
+    final sorted = [...data]..sort((a, b) {
+        final an =
+            ('${a.firstname ?? ''} ${a.lastname ?? ''}').trim().toLowerCase();
+        final bn =
+            ('${b.firstname ?? ''} ${b.lastname ?? ''}').trim().toLowerCase();
+        return an.compareTo(bn);
+      });
+
+    final List<Widget> items = [];
+    // Skip A-Z section headers while searching — they add visual noise
+    // when the list is small. Matches voice360-fe's behaviour (table-style
+    // results, no grouping).
+    String? lastLetter;
+    for (final c in sorted) {
+      final name = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
+      if (!isSearching) {
+        final letter = name.isEmpty ? '#' : name[0].toUpperCase();
+        if (letter != lastLetter) {
+          items.add(V360SectionHeader(title: letter));
+          lastLetter = letter;
+        }
+      }
+      items.add(_contactRow(c, name));
+    }
+    // Footer spinner — only on the full list. Searches return all matches in
+    // one page, so there's no "load more" path.
+    if (!isSearching && con.isContactsLoading) {
+      items.add(const Padding(
+        padding: EdgeInsets.all(V360Spacing.s4),
+        child: Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
           ),
         ),
-        body: GetBuilder<ContactsController>(
-            init: con,
-            builder: (ContactsController value) {
-              return SingleChildScrollView(
-                child: Container(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                      Divider(
-                        height: 0,
-                      ),
-                      SizedBox(
-                        height: 20.h,
-                      ),
-                      Searchbar(
-                        controller: value.searchController,
-                        onChanged: (val) {
-                          print('-------->>>>$val');
-                          con.searchContacts("0".toString(),val);
-                          // value.update();
-                        },
-                      ),
-                      SizedBox(
-                        height: 10.h,
-                      ),
-                      TabBar(
-                        labelPadding: EdgeInsets.symmetric(horizontal: 10.w),
-                        labelColor: Theme.of(context).colorScheme.primary,
-                        isScrollable: true, // add this property
-                        unselectedLabelColor: Color(0xff838799),
-                        indicatorColor: Theme.of(context).colorScheme.primary,
-                        indicatorSize: TabBarIndicatorSize.label,
+      ));
+    }
 
-                        indicatorPadding: EdgeInsets.only(bottom: 10.h),
-                        labelStyle: TextStyle(
-                            fontSize: 15.sp, fontWeight: FontWeight.w500),
-                        tabs: [
-                          Tab(
-                            text: 'Contacts',
-                          ),
-                          Tab(
-                            text: 'Contact Lists (${con.totalCount})',
-                          ),
-                        ],
-                      ),
-                      Container(
-                          height: MediaQuery.of(context).size.height * 0.63,
-                          child: TabBarView(children: [
-                            value.isContactsLoading
-                                ? ContactListShimmer()
-                                : ListView.builder(
-                                    controller: _scrollController,
-                                    itemCount: con.getDataList().length+1,
-                                    itemBuilder: (context, index) {
-                                      if (index < con.getDataList().length) {
-                                        return
-                                          GestureDetector(
-                                            onTap: () {
-                                              Get.toNamed(
-                                                  Routes
-                                                      .CONTACT_DETAIS_SCREEN_ROUTE,
-                                                  arguments:
-                                                  con.getDataList()[index]);
-                                            },
-                                            child: Container(
-                                              padding: EdgeInsets.symmetric(
-                                                  vertical: 10.h,
-                                                  horizontal: 10.w),
-                                              child: Row(
-                                                mainAxisSize: MainAxisSize.max,
-                                                children: [
-                                                  TextBox(
-                                                    text:"${con.getDataList()[index].firstname![0]}" ,
-                                                  ),
-                                                  SizedBox(width: 15.w),
-                                                  Container(
-                                                      alignment:
-                                                      Alignment.centerLeft,
-                                                      child: Column(
-                                                        mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .center,
-                                                        crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                        children: [
-                                                          Row(
-                                                            children: [
-                                                              Text(
-                                                                "${con
-                                                                    .getDataList()[index]
-                                                                    .firstname!} ${con
-                                                                    .getDataList()[index]
-                                                                    .lastname!}",
-                                                                // style: ts(1, 0xff1B1A57, 14.sp, 5),
-                                                                maxLines: 2,
-                                                                style: TextStyle(
-                                                                  fontWeight:
-                                                                  FontWeight
-                                                                      .w600,
-                                                                  fontSize: 15
-                                                                      .sp,
-                                                                  overflow:
-                                                                  TextOverflow
-                                                                      .ellipsis,
-                                                                ),
-                                                              ),
-                                                              SizedBox(
-                                                                width: 5.w,
-                                                              ),
-                                                            ],
-                                                          ),
-                                                        ],
-                                                      ))
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                      }else{
-                                       return con.totalPages.value > con.currentPage.value
-                                            ? const Center(
-                                          child: Column(
-                                            children: [
-                                              SizedBox(height: 20),
-                                              CircularProgressIndicator(),
-                                              SizedBox(height: 60),
-                                            ],
-                                          ),
-                                        )
-                                            : const SizedBox();
-                                      }
-                                    }),
-                            ListView.builder(
-                                itemBuilder: (context, index) {
-                              return Container(
-                                margin: EdgeInsets.symmetric(
-                                    vertical: 10.h, horizontal: 0.w),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.max,
-                                  children: [
-                                    SizedBox(width: 15.w),
-                                    Container(
-                                        alignment: Alignment.centerLeft,
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Container(
-                                                  width: 100.w,
-                                                  child: Stack(
-                                                    children: [
-                                                      Positioned(
-                                                        left: 35.w,
-                                                        child: Container(
-                                                          height: 50.h,
-                                                          width: 50.w,
-                                                          alignment:
-                                                              Alignment.center,
-                                                          decoration: BoxDecoration(
-                                                              border: Border.all(
-                                                                  color: Colors
-                                                                      .white),
-                                                              shape: BoxShape
-                                                                  .circle,
-                                                              color: Color(
-                                                                  0xffF5F8FF)),
-                                                          child: Text(
-                                                            "B",
-                                                            style: TextStyle(
-                                                              color: Color(
-                                                                  0xff2960EC),
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              fontSize: 17.sp,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      Positioned(
-                                                        child: Container(
-                                                          height: 50.h,
-                                                          width: 50.w,
-                                                          alignment:
-                                                              Alignment.center,
-                                                          decoration:
-                                                              BoxDecoration(
-                                                            border: Border.all(
-                                                                color: Colors
-                                                                    .white),
-                                                            shape:
-                                                                BoxShape.circle,
-                                                            color: Color(
-                                                                0xffF5F8FF),
-                                                          ),
-                                                          child: Text(
-                                                            "A",
-                                                            style: TextStyle(
-                                                              color: Color(
-                                                                  0xff2960EC),
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              fontSize: 17.sp,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                                Text(
-                                                  "ABC",
-                                                  // style: ts(1, 0xff1B1A57, 14.sp, 5),
-                                                  maxLines: 2,
-                                                  style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      fontSize: 15.sp,
-                                                      overflow: TextOverflow
-                                                          .ellipsis),
-                                                ),
-                                                SizedBox(
-                                                  width: 5.w,
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ))
-                                  ],
-                                ),
-                              );
-                            })
-                          ]))
-                    ])),
-              );
-            }),
+    return ListView(
+      controller: _scroll,
+      padding: const EdgeInsets.only(bottom: V360Spacing.s10),
+      children: items,
+    );
+  }
+
+  Widget _contactRow(Contact c, String name) {
+    return V360ListTile(
+      leading: V360Avatar(name: name.isEmpty ? '?' : name, size: 44),
+      title: name.isEmpty ? '(No name)' : name,
+      subtitle: c.phone ?? c.email ?? '',
+      trailing: IconButton(
+        icon: const Icon(
+          Icons.call_rounded,
+          color: V360Colors.callAccept,
+          size: 22,
+        ),
+        onPressed: c.phone == null || c.phone!.isEmpty
+            ? null
+            : () => base.handleCall(c.phone!, context),
+      ),
+      onTap: () {
+        Get.toNamed(
+          Routes.CONTACT_DETAIS_SCREEN_ROUTE,
+          arguments: {'contact': c},
+        );
+      },
+    );
+  }
+}
+
+class _ContactsLoading extends StatelessWidget {
+  const _ContactsLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: 10,
+      padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
+      itemBuilder: (_, __) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: V360Spacing.s2),
+        child: Row(
+          children: [
+            V360Skeleton.circle(size: 44),
+            const SizedBox(width: V360Spacing.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  V360Skeleton.line(width: 160, height: 14),
+                  const SizedBox(height: 6),
+                  V360Skeleton.line(width: 100, height: 12),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,388 +1,188 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_switch/flutter_switch.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/app_theme.dart';
 import 'package:itp_voice/controllers/call_settings_controller.dart';
-import 'package:itp_voice/widgets/app_textfield.dart';
-import 'package:itp_voice/widgets/phone_number_field.dart';
+import 'package:itp_voice/design/v360.dart';
 
 class CallSettingsScreen extends StatelessWidget {
-  CallSettingsScreen({Key? key}) : super(key: key);
+  CallSettingsScreen({super.key});
+  final CallSettingsController con = Get.put(CallSettingsController());
 
-  CallSettingsController con = Get.put(CallSettingsController());
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: Container(
-          margin: EdgeInsets.only(top: 10.h, left: 0.w),
-          child: GestureDetector(
-            onTap: () {
-              Get.back();
-            },
-            child: Icon(
-              Icons.arrow_back_ios,
-              color: AppTheme.colors(context)?.textColor,
-              size: 18.sp,
-            ),
-          ),
+      appBar: AppBar(title: const Text('Call settings')),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: V360Spacing.s4,
+          vertical: V360Spacing.s4,
         ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        centerTitle: true,
-        title: Container(
-          padding: EdgeInsets.only(top: 10.h),
-          child: Text(
-            "Call Settings",
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.secondary,
-              fontSize: 20.sp,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-      body: Obx(
-        () => con.isLoading.value
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : SingleChildScrollView(
-                child: Container(
-                  child: Column(
-                    children: [
-                      Divider(
-                        height: 0,
+        children: [
+          _label('CALL FORWARDING'),
+          const SizedBox(height: V360Spacing.s2),
+          V360Card(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                Obx(() => SwitchListTile(
+                      value: con.callForwarding.value,
+                      onChanged: (v) => con.callForwarding.value = v,
+                      title: const Text('Forward calls'),
+                      secondary: Icon(Icons.phone_forwarded_outlined,
+                          color: cs.primary),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: V360Spacing.s4,
                       ),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 15.w),
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              height: 20.h,
-                            ),
-                            Container(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                "Devices",
-                                style: TextStyle(
-                                  fontSize: 16.sp,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Container(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    "Phone abc",
-                                    style: TextStyle(
-                                      fontSize: 14.sp,
-                                      color: Theme.of(context).colorScheme.tertiary,
-                                    ),
-                                  ),
-                                  Text(
-                                    "Edit",
-                                    style: TextStyle(
-                                      fontSize: 14.sp,
-                                      color: Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Divider(),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Enable Call Forwarding",
-                                  style: TextStyle(
-                                    fontSize: 16.sp,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Obx(() => FlutterSwitch(
-                                      height: 22.h,
-                                      width: 50.w,
-                                      activeColor: Theme.of(context).colorScheme.primary,
-                                      padding: 0,
-                                      value: con.callForwarding.value,
-                                      onToggle: (val) {
-                                        con.callForwarding.value = val;
-                                      },
-                                    )),
-                              ],
-                            ),
-                            Obx(() => con.callForwarding.value
-                                ? Column(
-                                    children: [
-                                      SizedBox(
-                                        height: 20.h,
-                                      ),
-                                      Container(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          "Number or extension to forward calls to",
-                                          style: TextStyle(
-                                            fontSize: 15.sp,
-                                            color: Theme.of(context).colorScheme.secondary,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        height: 10.h,
-                                      ),
-                                      PhoneNumberField(),
-                                      SizedBox(
-                                        height: 10.h,
-                                      ),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            "Forward Direct Calls\n(Ignore queues, ring groups,etc)",
-                                            style: TextStyle(
-                                              fontSize: 14.sp,
-                                              // fontWeight: FontWeight.bold,
-                                              color: Theme.of(context).colorScheme.tertiary,
-                                            ),
-                                          ),
-                                          Obx(() => FlutterSwitch(
-                                                height: 22.h,
-                                                width: 50.w,
-                                                activeColor: Theme.of(context).colorScheme.primary,
-                                                padding: 0,
-                                                value: con.forwardDirectCallsOnly.value,
-                                                onToggle: (val) {
-                                                  con.forwardDirectCallsOnly.value = val;
-                                                },
-                                              )),
-                                        ],
-                                      ),
-                                      SizedBox(
-                                        height: 15.h,
-                                      ),
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Text(
-                                            "Keep original caller-ID",
-                                            style: TextStyle(
-                                              fontSize: 14.sp,
-                                              // fontWeight: FontWeight.bold,
-                                              color: Theme.of(context).colorScheme.tertiary,
-                                            ),
-                                          ),
-                                          Obx(() => FlutterSwitch(
-                                                height: 22.h,
-                                                width: 50.w,
-                                                activeColor: Theme.of(context).colorScheme.primary,
-                                                padding: 0,
-                                                value: con.keepOriginalCallerId.value,
-                                                onToggle: (val) {
-                                                  con.keepOriginalCallerId.value = val;
-                                                },
-                                              )),
-                                        ],
-                                      ),
-                                    ],
-                                  )
-                                : Container()),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Divider(),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Override Default Caller ID Settings",
-                                  style: TextStyle(
-                                    fontSize: 16.sp,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Obx(
-                                  () => FlutterSwitch(
-                                    height: 22.h,
-                                    width: 50.w,
-                                    activeColor: Theme.of(context).colorScheme.primary,
-                                    padding: 0,
-                                    value: con.overrideDefaultCallerIdSettings,
-                                    onToggle: (val) {
-                                      con.overrideDefaultCallerIdSettings = val;
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Obx(
-                              (() => con.overrideDefaultCallerIdSettings
-                                  ? Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        SizedBox(
-                                          height: 20.h,
-                                        ),
-                                        RichText(
-                                          text: TextSpan(
-                                            children: [
-                                              TextSpan(
-                                                text: "Caller ID Name",
-                                                style: TextStyle(
-                                                  fontSize: 15.sp,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Theme.of(context).colorScheme.secondary,
-                                                ),
-                                              ),
-                                              TextSpan(
-                                                text: " *",
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                  fontSize: 18.sp,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        SizedBox(
-                                          height: 5.h,
-                                        ),
-                                        AppTextField(
-                                          hint: "Jhon Doe",
-                                          textController: con.callerNameController,
-                                          onChanged: (text) => con.updateOverriddenCallerData(),
-                                        ),
-                                        SizedBox(
-                                          height: 10.h,
-                                        ),
-                                        RichText(
-                                          text: TextSpan(
-                                            children: [
-                                              TextSpan(
-                                                text: "Caller ID Number",
-                                                style: TextStyle(
-                                                  fontSize: 15.sp,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Theme.of(context).colorScheme.secondary,
-                                                ),
-                                              ),
-                                              TextSpan(
-                                                text: " *",
-                                                style: TextStyle(
-                                                  color: Colors.red,
-                                                  fontSize: 18.sp,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        SizedBox(
-                                          height: 5.h,
-                                        ),
-                                        AppTextField(
-                                          hint: "+92XXX-XXXXXXX",
-                                          textController: con.callerNnumberController,
-                                          onChanged: (text) => con.updateOverriddenCallerData(),
-                                        )
-                                      ],
-                                    )
-                                  : Container()),
-                            ),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Divider(),
-                            SizedBox(
-                              height: 10.h,
-                            ),
-                            Container(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                "Call Recording",
-                                style: TextStyle(
-                                  fontSize: 16.sp,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 20.h,
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Call Recording Internal",
-                                  style: TextStyle(fontSize: 14.sp, color: Theme.of(context).colorScheme.tertiary
-                                      // fontWeight: FontWeight.bold,
-                                      ),
-                                ),
-                                Obx(() => FlutterSwitch(
-                                      height: 22.h,
-                                      width: 50.w,
-                                      activeColor: Theme.of(context).colorScheme.primary,
-                                      padding: 0,
-                                      value: con.callRecordingInternal.value,
-                                      onToggle: (val) {
-                                        con.callRecordingInternal.value = val;
-                                      },
-                                    )),
-                              ],
-                            ),
-                            SizedBox(
-                              height: 20.h,
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Call Recording External",
-                                  style: TextStyle(fontSize: 14.sp, color: Theme.of(context).colorScheme.tertiary
-                                      // fontWeight: FontWeight.bold,
-                                      ),
-                                ),
-                                Obx(() => FlutterSwitch(
-                                      height: 22.h,
-                                      width: 50.w,
-                                      activeColor: Theme.of(context).colorScheme.primary,
-                                      padding: 0,
-                                      value: con.callRecordingExternal.value,
-                                      onToggle: (val) {
-                                        con.callRecordingExternal.value = val;
-                                      },
-                                    )),
-                              ],
-                            ),
-                          ],
+                    )),
+                Divider(
+                    height: 1,
+                    color: cs.outlineVariant,
+                    indent: 56),
+                Obx(() => SwitchListTile(
+                      value: con.forwardDirectCallsOnly.value,
+                      onChanged: (v) => con.forwardDirectCallsOnly.value = v,
+                      title: const Text('Direct calls only'),
+                      subtitle: Text(
+                        'Only forward calls placed directly to your number',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: cs.onSurfaceVariant,
                         ),
-                      )
-                    ],
+                      ),
+                      secondary: Icon(Icons.tune_rounded, color: cs.primary),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: V360Spacing.s4,
+                      ),
+                    )),
+                Divider(
+                    height: 1,
+                    color: cs.outlineVariant,
+                    indent: 56),
+                Obx(() => SwitchListTile(
+                      value: con.keepOriginalCallerId.value,
+                      onChanged: (v) => con.keepOriginalCallerId.value = v,
+                      title: const Text('Keep original caller ID'),
+                      secondary: Icon(Icons.person_outline_rounded,
+                          color: cs.primary),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: V360Spacing.s4,
+                      ),
+                    )),
+              ],
+            ),
+          ),
+          const SizedBox(height: V360Spacing.s5),
+          _label('CALLER ID'),
+          const SizedBox(height: V360Spacing.s2),
+          V360Card(
+            padding: EdgeInsets.zero,
+            child: Obx(() {
+              final on = con.overrideDefaultCallerIdSettings;
+              return Column(
+                children: [
+                  SwitchListTile(
+                    value: on,
+                    onChanged: (v) =>
+                        con.overrideDefaultCallerIdSettings = v,
+                    title: const Text('Override default caller ID'),
+                    secondary: Icon(Icons.badge_outlined, color: cs.primary),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: V360Spacing.s4,
+                    ),
                   ),
-                ),
-              ),
+                  if (on) ...[
+                    const Divider(height: 1, indent: 56),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        V360Spacing.s4,
+                        V360Spacing.s3,
+                        V360Spacing.s4,
+                        V360Spacing.s4,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: con.callerNameController,
+                            decoration: const InputDecoration(
+                              labelText: 'Caller name',
+                              prefixIcon:
+                                  Icon(Icons.person_outline_rounded, size: 20),
+                            ),
+                          ),
+                          const SizedBox(height: V360Spacing.s3),
+                          TextField(
+                            controller: con.callerNnumberController,
+                            keyboardType: TextInputType.phone,
+                            decoration: const InputDecoration(
+                              labelText: 'Caller number',
+                              prefixIcon:
+                                  Icon(Icons.phone_outlined, size: 20),
+                            ),
+                          ),
+                          const SizedBox(height: V360Spacing.s4),
+                          V360Button(
+                            label: 'Save caller ID',
+                            onPressed: con.updateOverriddenCallerData,
+                            fullWidth: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            }),
+          ),
+          const SizedBox(height: V360Spacing.s5),
+          _label('CALL RECORDING'),
+          const SizedBox(height: V360Spacing.s2),
+          V360Card(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                Obx(() => SwitchListTile(
+                      value: con.callRecordingInternal.value,
+                      onChanged: (v) => con.callRecordingInternal.value = v,
+                      title: const Text('Record internal calls'),
+                      secondary: Icon(Icons.fiber_manual_record_rounded,
+                          color: V360Colors.danger500),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: V360Spacing.s4,
+                      ),
+                    )),
+                Divider(
+                    height: 1,
+                    color: cs.outlineVariant,
+                    indent: 56),
+                Obx(() => SwitchListTile(
+                      value: con.callRecordingExternal.value,
+                      onChanged: (v) => con.callRecordingExternal.value = v,
+                      title: const Text('Record external calls'),
+                      secondary: Icon(Icons.fiber_manual_record_outlined,
+                          color: cs.primary),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: V360Spacing.s4,
+                      ),
+                    )),
+              ],
+            ),
+          ),
+          const SizedBox(height: V360Spacing.s10),
+        ],
       ),
     );
   }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(left: V360Spacing.s2),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
+          ),
+        ),
+      );
 }

@@ -14,7 +14,7 @@ class VoiceMailPlayerController extends GetxController {
   playOrPlausePlayer() async {
     playerController!.playerState == PlayerState.playing
         ? await playerController!.pausePlayer()
-        : await playerController!.startPlayer(finishMode: FinishMode.stop);
+        : await playerController!.startPlayer();
   }
 
   @override

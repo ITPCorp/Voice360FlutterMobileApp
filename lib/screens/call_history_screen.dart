@@ -1,864 +1,403 @@
-import 'package:alphabet_list_view/alphabet_list_view.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
-import 'package:itp_voice/app_theme.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/call_history_controller.dart';
-import 'package:itp_voice/routes.dart';
-import 'package:itp_voice/widgets/call_history_shimmer.dart';
-import 'package:itp_voice/widgets/search_textfield.dart';
-import 'package:itp_voice/widgets/text_container.dart';
-import 'package:itp_voice/temp_data.dart' as repo;
+import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/models/call_history_model.dart';
+import 'package:itp_voice/screens/transcript_modal.dart';
+import 'package:itp_voice/services/call_media.dart';
+
+enum _Filter { all, missed, inbound, outbound }
 
 class CallHistoryScreen extends StatefulWidget {
-  CallHistoryScreen({Key? key}) : super(key: key);
+  const CallHistoryScreen({super.key});
 
   @override
   State<CallHistoryScreen> createState() => _CallHistoryScreenState();
 }
 
 class _CallHistoryScreenState extends State<CallHistoryScreen> {
-  CallHistoryController con = Get.put(CallHistoryController());
-  BaseScreenController baseController = Get.find<BaseScreenController>();
-  final _scrollController = ScrollController();
+  final CallHistoryController con = Get.put(CallHistoryController());
+  final BaseScreenController base = Get.find<BaseScreenController>();
+  _Filter _filter = _Filter.all;
+
+  bool _matchesFilter(CallHistory c) {
+    final missed = (c.isMissed ?? false) && (c.isIncoming ?? false);
+    final inbound = (c.isIncoming ?? false) && !missed;
+    final outbound = !(c.isIncoming ?? true);
+    return switch (_filter) {
+      _Filter.all => true,
+      _Filter.missed => missed,
+      _Filter.inbound => inbound,
+      _Filter.outbound => outbound,
+    };
+  }
+
+  bool _matchesSearch(CallHistory c, String q) {
+    if (q.isEmpty) return true;
+    final n = (c.name ?? '').toLowerCase();
+    final num = (c.numberToDial ?? '').toLowerCase();
+    return n.contains(q) || num.contains(q);
+  }
+
+  Iterable<CallHistory> _apply(List<CallHistory>? src) {
+    if (src == null) return const [];
+    final q = con.searchController.text.toLowerCase().trim();
+    return src.where((c) => _matchesFilter(c) && _matchesSearch(c, q));
+  }
 
   @override
   Widget build(BuildContext context) {
-    return GetBuilder(
-        init: con,
-        builder: (CallHistoryController value) {
-          return DefaultTabController(
-            length: 2,
-            child: Scaffold(
-              appBar: AppBar(
-                automaticallyImplyLeading: false,
-                // leading: Container(
-                //   margin: EdgeInsets.only(top: 10.h, left: 0.w),
-                //   child: GestureDetector(
-                //       onTap: () {
-                //         Get.back();
-                //       },
-                //       child: Icon(Icons.arrow_back_ios, color: AppTheme.colors(context)?.textColor, size: 18.sp)),
-                // ),
-                actions: [
-                  GestureDetector(
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        useRootNavigator: true,
-                        builder: (context) {
-                          return Container(
-                            height: 120.h,
-                            padding: EdgeInsets.symmetric(horizontal: 20.w),
-                            child: Column(children: [
-                              SizedBox(height: 10.h),
-                              Divider(
-                                color: Colors.grey.shade400,
-                                thickness: 3,
-                                indent: 140.w,
-                                endIndent: 140.w,
-                              ),
-                              Align(
-                                alignment: Alignment.center,
-                                child: Text(
-                                  "Actions",
-                                  style: TextStyle(
-                                      fontSize: 18.sp,
-                                      fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.secondary),
-                                ),
-                              ),
-                              SizedBox(
-                                height: 20.h,
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  Get.toNamed(Routes.CALL_HISTORY_SCREEN_ROUTE);
-                                },
-                                child: Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    "Clear Call History",
-                                    style: TextStyle(fontSize: 18.sp, color: Theme.of(context).colorScheme.secondary),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(
-                                height: 20.h,
-                              ),
-                            ]),
-                          );
-                        },
-                      );
-                    },
-                    child: Container(
-                      margin: EdgeInsets.only(right: 20.w, top: 10.h),
-                      child: Icon(Icons.more_vert, color: const Color(0xff6B6F80), size: 22.sp),
-                    ),
-                  )
-                ],
-                elevation: 0,
-                backgroundColor: Colors.transparent,
-                centerTitle: true,
-                title: Container(
-                  padding: EdgeInsets.only(top: 10.h),
-                  child: Text(
-                    "Call History",
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.secondary,
-                      fontSize: 20.sp,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              body: SingleChildScrollView(
-                child: Container(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Divider(
-                    height: 0,
-                  ),
-                  SizedBox(
-                    height: 20.h,
-                  ),
-                  Searchbar(
-                    controller: value.searchController,
-                    onChanged: (val) {
-                      value.update();
-                    },
-                  ),
-                  SizedBox(
-                    height: 10.h,
-                  ),
-                  TabBar(
-                    labelPadding: EdgeInsets.symmetric(horizontal: 10.w),
-                    labelColor: Theme.of(context).colorScheme.primary,
-                    isScrollable: true, // add this property
-                    unselectedLabelColor: const Color(0xff838799),
-                    indicatorColor: Theme.of(context).colorScheme.primary,
-                    indicatorSize: TabBarIndicatorSize.label,
+    return GetBuilder<CallHistoryController>(
+      builder: (_) {
+        return Column(
+          children: [
+            _buildSearchAndFilters(context),
+            Expanded(
+              child: con.isLoading && con.callHistoryList.isEmpty
+                  ? const _CallHistoryLoading()
+                  : _buildList(context),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-                    indicatorPadding: EdgeInsets.only(bottom: 10.h),
-                    labelStyle: TextStyle(fontSize: 15.sp, fontWeight: FontWeight.w500),
-                    tabs: [
-                      const Tab(
-                        text: 'All',
-                      ),
-                      const Tab(
-                        text: 'Missed',
-                      ),
-                    ],
-                  ),
-                  Container(
-                      height: MediaQuery.of(context).size.height * 0.63,
-                      child: TabBarView(children: [
+  Widget _buildSearchAndFilters(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        V360Spacing.s4,
+        V360Spacing.s3,
+        V360Spacing.s4,
+        V360Spacing.s3,
+      ),
+      child: Column(
+        children: [
+          V360SearchField(
+            controller: con.searchController,
+            hintText: 'Search calls',
+            onChanged: (_) => con.update(),
+            onClear: () {
+              con.searchController.clear();
+              con.update();
+            },
+          ),
+          const SizedBox(height: V360Spacing.s3),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _filterChip('All', _Filter.all),
+                const SizedBox(width: V360Spacing.s2),
+                _filterChip('Missed', _Filter.missed),
+                const SizedBox(width: V360Spacing.s2),
+                _filterChip('Inbound', _Filter.inbound),
+                const SizedBox(width: V360Spacing.s2),
+                _filterChip('Outbound', _Filter.outbound),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-                        SingleChildScrollView(
-                                controller: con.scrollController,
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
+  Widget _filterChip(String label, _Filter f) {
+    final selected = _filter == f;
+    final cs = Theme.of(context).colorScheme;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() => _filter = f),
+      labelStyle: TextStyle(
+        color: selected ? cs.onPrimary : cs.onSurface,
+        fontWeight: FontWeight.w600,
+        fontSize: 13,
+      ),
+      backgroundColor: cs.surfaceContainer,
+      selectedColor: cs.primary,
+      side: BorderSide(
+        color: selected ? cs.primary : cs.outlineVariant,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s2),
+      visualDensity: VisualDensity.compact,
+    );
+  }
 
-                                    value.todayCallHistory.length < 1
-                                        ? Container()
-                                        : Column(
-                                            children: [
-                                              SizedBox(
-                                                height: 20.h,
-                                              ),
-                                              Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 15.w),
-                                                child: Align(
-                                                  child: Text(
-                                                    "Today",
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: AppTheme.colors(context)?.textColor,
-                                                    ),
-                                                  ),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                              ),
-                                              ListView.builder(
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                shrinkWrap: true,
-                                                itemCount: value.getDataList("today", false).length,
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return Container(
-                                                    child: ListTile(
-                                                      dense: true,
-                                                      leading: TextBox(
-                                                        text: value.getDataList("today", false)[index].name!.length == 3
-                                                            ? value
-                                                                .getDataList("today", false)[index]
-                                                                .name!
-                                                                .substring(0, 3)
-                                                            : value.getDataList("today", false)[index].name!.length == 2
-                                                                ? value
-                                                                    .getDataList("today", false)[index]
-                                                                    .name!
-                                                                    .substring(0, 1)
-                                                                : value.getDataList("today", false)[index].name![0],
-                                                      ),
-                                                      subtitle: Container(
-                                                        margin: EdgeInsets.only(top: 5.h),
-                                                        child: Row(
-                                                          children: [
-                                                            Container(
-                                                              child: Image.asset(
-                                                                value.getDataList("today", false)[index].isIncoming! &&
-                                                                        value
-                                                                            .getDataList("today", false)[index]
-                                                                            .isMissed!
-                                                                    ? "assets/images/missed_call.png"
-                                                                    : value
-                                                                                .getDataList("today", false)[index]
-                                                                                .isIncoming! &&
-                                                                            !value
-                                                                                .getDataList("today", false)[index]
-                                                                                .isMissed!
-                                                                        ? "assets/images/incoming_call.png"
-                                                                        : "assets/images/outgoing_call.png", //                                                                    // fit: BoxFit.fill,
-                                                                scale: 4.2,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              width: 10.w,
-                                                            ),
-                                                            Text(
-                                                              DateFormat.MMMEd()
-                                                                  .add_jm()
-                                                                  .format(
-                                                                      value.getDataList("today", false)[index].time!)
-                                                                  .toString(),
-                                                              style: TextStyle(
-                                                                fontSize: 14.sp,
-                                                                color: Theme.of(context).colorScheme.tertiary,
-                                                              ),
-                                                            )
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      trailing: GestureDetector(
-                                                        onTap: () {
-                                                          baseController.handleCall(
-                                                              value.getDataList("today", false)[index].numberToDial,
-                                                              context);
-                                                        },
-                                                        child: Container(
-                                                          child: Image.asset(
-                                                            'assets/images/dial.png',
-                                                            color: AppTheme.colors(context)?.textColor,
-                                                            height: 17.h,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      title: Text(
-                                                        value.getDataList("today", false)[index].name!,
-                                                        maxLines: 2,
-                                                        style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 15.sp,
-                                                            overflow: TextOverflow.ellipsis),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    value.getDataList("yesterday", false).length < 1
-                                        ? Container()
-                                        : Column(
-                                            children: [
-                                              SizedBox(
-                                                height: 20.h,
-                                              ),
-                                              Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 15.w),
-                                                child: Align(
-                                                  child: Text(
-                                                    "Yesterday",
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: AppTheme.colors(context)?.textColor,
-                                                    ),
-                                                  ),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                              ),
-                                              ListView.builder(
-                                                shrinkWrap: true,
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                itemCount: value.getDataList("yesterday", false).length,
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return Container(
-                                                    child: ListTile(
-                                                      dense: true,
-                                                      leading: TextBox(
-                                                        text: value
-                                                                    .getDataList("yesterday", false)[index]
-                                                                    .name!
-                                                                    .length ==
-                                                                3
-                                                            ? value
-                                                                .getDataList("yesterday", false)[index]
-                                                                .name!
-                                                                .substring(0, 3)
-                                                            : value
-                                                                        .getDataList("yesterday", false)[index]
-                                                                        .name!
-                                                                        .length ==
-                                                                    2
-                                                                ? value
-                                                                    .getDataList("yesterday", false)[index]
-                                                                    .name!
-                                                                    .substring(0, 1)
-                                                                : value.getDataList("yesterday", false)[index].name![0],
-                                                      ),
-                                                      subtitle: Container(
-                                                        margin: EdgeInsets.only(top: 5.h),
-                                                        child: Row(
-                                                          children: [
-                                                            Container(
-                                                              child: Image.asset(
-                                                                value
-                                                                            .getDataList("yesterday", false)[index]
-                                                                            .isIncoming! &&
-                                                                        value
-                                                                            .getDataList("yesterday", false)[index]
-                                                                            .isMissed!
-                                                                    ? "assets/images/missed_call.png"
-                                                                    : value
-                                                                                .getDataList("yesterday", false)[index]
-                                                                                .isIncoming! &&
-                                                                            !value
-                                                                                .getDataList("yesterday", false)[index]
-                                                                                .isMissed!
-                                                                        ? "assets/images/incoming_call.png"
-                                                                        : "assets/images/outgoing_call.png", // fit: BoxFit.fill,
-                                                                scale: 4.2,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              width: 10.w,
-                                                            ),
-                                                            Text(
-                                                              DateFormat.MMMEd()
-                                                                  .add_jm()
-                                                                  .format(value
-                                                                      .getDataList("yesterday", false)[index]
-                                                                      .time!)
-                                                                  .toString(),
-                                                              style: TextStyle(
-                                                                fontSize: 14.sp,
-                                                                color: Theme.of(context).colorScheme.tertiary,
-                                                              ),
-                                                            )
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      trailing: GestureDetector(
-                                                        onTap: () {
-                                                          baseController.handleCall(
-                                                              value.getDataList("yesterday", false)[index].numberToDial,
-                                                              context);
-                                                        },
-                                                        child: Container(
-                                                          child: Image.asset(
-                                                            'assets/images/dial.png',
-                                                            color: AppTheme.colors(context)?.textColor,
-                                                            height: 17.h,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      title: Text(
-                                                        value.getDataList("yesterday", false)[index].name!,
-                                                        maxLines: 2,
-                                                        style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 15.sp,
-                                                            overflow: TextOverflow.ellipsis),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    value.getDataList("earlier", false).length < 1
-                                        ? Container()
-                                        : Column(
-                                            children: [
-                                              SizedBox(
-                                                height: 20.h,
-                                              ),
-                                              Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 15.w),
-                                                child: Align(
-                                                  child: Text(
-                                                    "Earlier",
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                              ),
-                                              ListView.builder(
-                                                shrinkWrap: true,
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                itemCount: value.getDataList("earlier", false).length,
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return Container(
-                                                    child: ListTile(
-                                                      dense: true,
-                                                      leading: TextBox(
-                                                        text: value.getDataList("earlier", false)[index].name?.length == 3
-                                                            ? value.getDataList("earlier", false)[index].name!.substring(0, 3)
-                                                            : value.getDataList("earlier", false)[index].name?.length == 2
-                                                            ? value.getDataList("earlier", false)[index].name!.substring(0, 1)
-                                                            : value.getDataList("earlier", false)[index].name?.substring(0, 1) ?? '',
-                                                      ),
-                                                      subtitle: Container(
-                                                        margin: EdgeInsets.only(top: 5.h),
-                                                        child: Row(
-                                                          children: [
-                                                            Container(
-                                                              child: Image.asset(
-                                                                // 'assets/images/${repo.allCallHistory['Today'][index]['type']}_call.png',
-                                                                value
-                                                                            .getDataList("earlier", false)[index]
-                                                                            .isIncoming! &&
-                                                                        value
-                                                                            .getDataList("earlier", false)[index]
-                                                                            .isMissed!
-                                                                    ? "assets/images/missed_call.png"
-                                                                    : value
-                                                                                .getDataList("earlier", false)[index]
-                                                                                .isIncoming! &&
-                                                                            !value
-                                                                                .getDataList("earlier", false)[index]
-                                                                                .isMissed!
-                                                                        ? "assets/images/incoming_call.png"
-                                                                        : "assets/images/outgoing_call.png",
-                                                                // fit: BoxFit.fill,
-                                                                scale: 4.2,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              width: 10.w,
-                                                            ),
-                                                            Text(
-                                                              DateFormat.MMMEd()
-                                                                  .add_jm()
-                                                                  .format(
-                                                                      value.getDataList("earlier", false)[index].time!)
-                                                                  .toString(),
-                                                              style: TextStyle(
-                                                                fontSize: 14.sp,
-                                                                color: Theme.of(context).colorScheme.tertiary,
-                                                              ),
-                                                            )
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      trailing: GestureDetector(
-                                                        onTap: () {
-                                                          baseController.handleCall(
-                                                              value.getDataList("earlier", false)[index].numberToDial,
-                                                              context);
-                                                        },
-                                                        child: Container(
-                                                          child: Image.asset(
-                                                            'assets/images/dial.png',
-                                                            color: Colors.black,
-                                                            height: 17.h,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      title: Text(
-                                                        value.getDataList("earlier", false)[index].name??"",
-                                                        maxLines: 2,
-                                                        style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 15.sp,
-                                                            overflow: TextOverflow.ellipsis),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    value.isLoading ?const SizedBox(height:20 ,):const SizedBox(),
-                                    value.isLoading ? const CircularProgressIndicator():const SizedBox(),
-                                    value.isLoading ?const SizedBox(height:15,):const SizedBox(),
-                                  ],
-                                ),
-                              ),
-                        SingleChildScrollView(
-                                child: Column(
-                                  children: [
-                                    value.getDataList("today", true).length < 1
-                                        ? Container()
-                                        : Column(
-                                            children: [
-                                              SizedBox(
-                                                height: 20.h,
-                                              ),
-                                              Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 15.w),
-                                                child: Align(
-                                                  child: Text(
-                                                    "Today",
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                              ),
-                                              ListView.builder(
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                shrinkWrap: true,
-                                                itemCount: value.getDataList("today", true).length,
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return Container(
-                                                    child: ListTile(
-                                                      dense: true,
-                                                      leading: TextBox(
-                                                        text: value.getDataList("today", true)[index].name!.length == 3
-                                                            ? value
-                                                                .getDataList("today", true)[index]
-                                                                .name!
-                                                                .substring(0, 3)
-                                                            : value.getDataList("today", true)[index].name!.length == 2
-                                                                ? value
-                                                                    .getDataList("today", true)[index]
-                                                                    .name!
-                                                                    .substring(0, 1)
-                                                                : value.getDataList("today", true)[index].name![0],
-                                                      ),
-                                                      subtitle: Container(
-                                                        margin: EdgeInsets.only(top: 5.h),
-                                                        child: Row(
-                                                          children: [
-                                                            Container(
-                                                              child: Image.asset(
-                                                                value.getDataList("today", true)[index].isIncoming! &&
-                                                                        value
-                                                                            .getDataList("today", true)[index]
-                                                                            .isMissed!
-                                                                    ? "assets/images/missed_call.png"
-                                                                    : value
-                                                                                .getDataList("today", true)[index]
-                                                                                .isIncoming! &&
-                                                                            !value
-                                                                                .getDataList("today", true)[index]
-                                                                                .isMissed!
-                                                                        ? "assets/images/incoming_call.png"
-                                                                        : "assets/images/outgoing_call.png", //                                                                    // fit: BoxFit.fill,
-                                                                scale: 4.2,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              width: 10.w,
-                                                            ),
-                                                            Text(
-                                                              DateFormat.MMMEd()
-                                                                  .add_jm()
-                                                                  .format(value.getDataList("today", true)[index].time!)
-                                                                  .toString(),
-                                                              style: TextStyle(
-                                                                fontSize: 14.sp,
-                                                                color: Theme.of(context).colorScheme.tertiary,
-                                                              ),
-                                                            )
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      trailing: GestureDetector(
-                                                        onTap: () {
-                                                          baseController.handleCall(
-                                                              value.getDataList("today", true)[index].numberToDial,
-                                                              context);
-                                                        },
-                                                        child: Container(
-                                                          child: Image.asset(
-                                                            'assets/images/dial.png',
-                                                            color: Colors.black,
-                                                            height: 17.h,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      title: Text(
-                                                        value.getDataList("today", true)[index].name!,
-                                                        maxLines: 2,
-                                                        style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 15.sp,
-                                                            overflow: TextOverflow.ellipsis),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    value.getDataList("yesterday", true).length < 1
-                                        ? Container()
-                                        : Column(
-                                            children: [
-                                              SizedBox(
-                                                height: 20.h,
-                                              ),
-                                              Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 15.w),
-                                                child: Align(
-                                                  child: Text(
-                                                    "Yesterday",
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                              ),
-                                              ListView.builder(
-                                                shrinkWrap: true,
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                itemCount: value.getDataList("yesterday", true).length,
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return Container(
-                                                    child: ListTile(
-                                                      dense: true,
-                                                      leading: TextBox(
-                                                        text: value
-                                                                    .getDataList("yesterday", true)[index]
-                                                                    .name!
-                                                                    .length ==
-                                                                3
-                                                            ? value
-                                                                .getDataList("yesterday", true)[index]
-                                                                .name!
-                                                                .substring(0, 3)
-                                                            : value
-                                                                        .getDataList("yesterday", true)[index]
-                                                                        .name!
-                                                                        .length ==
-                                                                    2
-                                                                ? value
-                                                                    .getDataList("yesterday", true)[index]
-                                                                    .name!
-                                                                    .substring(0, 1)
-                                                                : value.getDataList("yesterday", true)[index].name![0],
-                                                      ),
-                                                      subtitle: Container(
-                                                        margin: EdgeInsets.only(top: 5.h),
-                                                        child: Row(
-                                                          children: [
-                                                            Container(
-                                                              child: Image.asset(
-                                                                value
-                                                                            .getDataList("yesterday", true)[index]
-                                                                            .isIncoming! &&
-                                                                        value
-                                                                            .getDataList("yesterday", true)[index]
-                                                                            .isMissed!
-                                                                    ? "assets/images/missed_call.png"
-                                                                    : value
-                                                                                .getDataList("yesterday", true)[index]
-                                                                                .isIncoming! &&
-                                                                            !value
-                                                                                .getDataList("yesterday", true)[index]
-                                                                                .isMissed!
-                                                                        ? "assets/images/incoming_call.png"
-                                                                        : "assets/images/outgoing_call.png", // fit: BoxFit.fill,
-                                                                scale: 4.2,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              width: 10.w,
-                                                            ),
-                                                            Text(
-                                                              DateFormat.MMMEd()
-                                                                  .add_jm()
-                                                                  .format(
-                                                                      value.getDataList("yesterday", true)[index].time!)
-                                                                  .toString(),
-                                                              style: TextStyle(
-                                                                fontSize: 14.sp,
-                                                                color: Theme.of(context).colorScheme.tertiary,
-                                                              ),
-                                                            )
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      trailing: GestureDetector(
-                                                        onTap: () {
-                                                          baseController.handleCall(
-                                                              value.getDataList("yesterday", true)[index].numberToDial,
-                                                              context);
-                                                        },
-                                                        child: Container(
-                                                          child: Image.asset(
-                                                            'assets/images/dial.png',
-                                                            color: Colors.black,
-                                                            height: 17.h,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      title: Text(
-                                                        value.getDataList("yesterday", true)[index].name!,
-                                                        maxLines: 2,
-                                                        style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 15.sp,
-                                                            overflow: TextOverflow.ellipsis),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    value.getDataList("earlier", true).length < 1
-                                        ? Container()
-                                        : Column(
-                                            children: [
-                                              SizedBox(
-                                                height: 20.h,
-                                              ),
-                                              Padding(
-                                                padding: EdgeInsets.symmetric(horizontal: 15.w),
-                                                child: Align(
-                                                  child: Text(
-                                                    "Earlier",
-                                                    style: TextStyle(
-                                                      fontSize: 14.sp,
-                                                      fontWeight: FontWeight.w600,
-                                                      color: Colors.black,
-                                                    ),
-                                                  ),
-                                                  alignment: Alignment.centerLeft,
-                                                ),
-                                              ),
-                                              ListView.builder(
-                                                shrinkWrap: true,
-                                                physics: const NeverScrollableScrollPhysics(),
-                                                itemCount: value.getDataList("earlier", true).length,
-                                                itemBuilder: (BuildContext context, int index) {
-                                                  return Container(
-                                                    child: ListTile(
-                                                      dense: true,
-                                                      leading: TextBox(
-                                                        text: value.getDataList("earlier", true)[index].name!.length ==
-                                                                3
-                                                            ? value
-                                                                .getDataList("earlier", true)[index]
-                                                                .name!
-                                                                .substring(0, 3)
-                                                            : value.getDataList("earlier", true)[index].name!.length ==
-                                                                    2
-                                                                ? value
-                                                                    .getDataList("earlier", true)[index]
-                                                                    .name!
-                                                                    .substring(0, 1)
-                                                                : value.getDataList("earlier", true)[index].name![0],
-                                                      ),
-                                                      subtitle: Container(
-                                                        margin: EdgeInsets.only(top: 5.h),
-                                                        child: Row(
-                                                          children: [
-                                                            Container(
-                                                              child: Image.asset(
-                                                                // 'assets/images/${repo.allCallHistory['Today'][index]['type']}_call.png',
-                                                                value.getDataList("earlier", true)[index].isIncoming! &&
-                                                                        value
-                                                                            .getDataList("earlier", true)[index]
-                                                                            .isMissed!
-                                                                    ? "assets/images/missed_call.png"
-                                                                    : value
-                                                                                .getDataList("earlier", true)[index]
-                                                                                .isIncoming! &&
-                                                                            !value
-                                                                                .getDataList("earlier", true)[index]
-                                                                                .isMissed!
-                                                                        ? "assets/images/incoming_call.png"
-                                                                        : "assets/images/outgoing_call.png",
-                                                                // fit: BoxFit.fill,
-                                                                scale: 4.2,
-                                                              ),
-                                                            ),
-                                                            SizedBox(
-                                                              width: 10.w,
-                                                            ),
-                                                            Text(
-                                                              DateFormat.MMMEd()
-                                                                  .add_jm()
-                                                                  .format(
-                                                                      value.getDataList("earlier", true)[index].time!)
-                                                                  .toString(),
-                                                              style: TextStyle(
-                                                                fontSize: 14.sp,
-                                                                color: Theme.of(context).colorScheme.tertiary,
-                                                              ),
-                                                            )
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      trailing: GestureDetector(
-                                                        onTap: () {
-                                                          baseController.handleCall(
-                                                              value.getDataList("earlier", true)[index].numberToDial,
-                                                              context);
-                                                        },
-                                                        child: Container(
-                                                          child: Image.asset(
-                                                            'assets/images/dial.png',
-                                                            color: Colors.black,
-                                                            height: 17.h,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      title: Text(
-                                                        value.getDataList("earlier", true)[index].name!,
-                                                        maxLines: 2,
-                                                        style: TextStyle(
-                                                            fontWeight: FontWeight.w600,
-                                                            fontSize: 15.sp,
-                                                            overflow: TextOverflow.ellipsis),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                              ),
-                                            ],
-                                          ),
-                                    value.isLoading ?const SizedBox(height:20 ,):const SizedBox(),
-                                    value.isLoading ? const CircularProgressIndicator():const SizedBox(),
-                                    value.isLoading ?const SizedBox(height:15,):const SizedBox(),
-                                  ],
-                                ),
-                              ),
-                      ]))
-                ])),
+  Widget _buildList(BuildContext context) {
+    final today = _apply(con.todayCallHistory).toList();
+    final yesterday = _apply(con.yesterdayCallHistory).toList();
+    final earlier = _apply(con.callHistoryList).toList();
+
+    if (today.isEmpty && yesterday.isEmpty && earlier.isEmpty) {
+      return const V360EmptyState(
+        icon: Icons.call_outlined,
+        title: 'No calls yet',
+        message: 'Your call history will appear here.',
+      );
+    }
+
+    return ListView(
+      controller: con.scrollController,
+      padding: const EdgeInsets.only(bottom: V360Spacing.s10),
+      children: [
+        if (today.isNotEmpty) ...[
+          const V360SectionHeader(title: 'TODAY'),
+          ...today.map((c) => _row(context, c)),
+        ],
+        if (yesterday.isNotEmpty) ...[
+          const V360SectionHeader(title: 'YESTERDAY'),
+          ...yesterday.map((c) => _row(context, c)),
+        ],
+        if (earlier.isNotEmpty) ...[
+          const V360SectionHeader(title: 'EARLIER'),
+          ...earlier.map((c) => _row(context, c)),
+        ],
+        if (con.isLoading && con.callHistoryList.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.all(V360Spacing.s4),
+            child: Center(
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
               ),
             ),
-          );
-        });
+          ),
+      ],
+    );
+  }
+
+  Widget _row(BuildContext context, CallHistory c) {
+    final missed = (c.isMissed ?? false) && (c.isIncoming ?? false);
+    final inbound = c.isIncoming ?? false;
+
+    final IconData icon = missed
+        ? Icons.call_missed_rounded
+        : inbound
+            ? Icons.call_received_rounded
+            : Icons.call_made_rounded;
+    final Color iconColor = missed
+        ? V360Colors.callMissed
+        : inbound
+            ? V360Colors.success500
+            : V360Colors.primary500;
+
+    final name = (c.name ?? '').isNotEmpty
+        ? c.name!
+        : (c.numberToDial ?? 'Unknown');
+    final subtitle = (c.name ?? '').isNotEmpty
+        ? c.numberToDial ?? ''
+        : '';
+    final time = _formatTime(c.time);
+
+    final hasMedia = c.hasRecording || c.hasTranscript;
+    return V360ListTile(
+      leading: V360Avatar(name: name, size: 44),
+      title: name,
+      subtitle: '${_typeLabel(missed: missed, inbound: inbound)}'
+          '${subtitle.isNotEmpty ? ' • $subtitle' : ''}'
+          '${(c.duration != null && c.duration! > 0) ? ' • ${_formatDuration(c.duration!)}' : ''}',
+      titleStyle: TextStyle(
+        fontWeight: FontWeight.w600,
+        color: missed ? V360Colors.callMissed : null,
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (hasMedia)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color:
+                      Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(V360Radius.full),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      c.hasTranscript
+                          ? Icons.text_snippet_outlined
+                          : Icons.graphic_eq_rounded,
+                      size: 11,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    if (c.hasTranscript && c.hasRecording) ...[
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.graphic_eq_rounded,
+                        size: 11,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          if (time.isNotEmpty)
+            Text(
+              time,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          const SizedBox(width: V360Spacing.s2),
+          Icon(icon, color: iconColor, size: 20),
+        ],
+      ),
+      onTap: () => _onTapRow(context, c),
+      onLongPress: c.numberToDial == null || c.numberToDial!.isEmpty
+          ? null
+          : () => base.handleCall(c.numberToDial!, context),
+    );
+  }
+
+  void _onTapRow(BuildContext context, CallHistory c) {
+    final hasMedia = c.hasRecording || c.hasTranscript;
+    if (!hasMedia) {
+      // No recording / transcript — preserve the old behaviour (tap to call).
+      if (c.numberToDial != null && c.numberToDial!.isNotEmpty) {
+        base.handleCall(c.numberToDial!, context);
+      }
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (sheetCtx) {
+        final name = (c.name ?? '').isNotEmpty
+            ? c.name!
+            : (c.numberToDial ?? 'Unknown');
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: V360Avatar(name: name, size: 36),
+                title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text(
+                  '${_typeLabel(missed: (c.isMissed ?? false) && (c.isIncoming ?? false), inbound: c.isIncoming ?? false)}'
+                  '${(c.duration != null && c.duration! > 0) ? ' • ${_formatDuration(c.duration!)}' : ''}',
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.call_rounded,
+                    color: V360Colors.callAccept),
+                title: const Text('Call back'),
+                enabled:
+                    c.numberToDial != null && c.numberToDial!.isNotEmpty,
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  if (c.numberToDial != null && c.numberToDial!.isNotEmpty) {
+                    base.handleCall(c.numberToDial!, context);
+                  }
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.text_snippet_outlined,
+                    color: Theme.of(context).colorScheme.primary),
+                title: const Text('Recording & transcript'),
+                subtitle: Text(
+                  [
+                    if (c.hasRecording) 'Recording',
+                    if (c.hasTranscript) 'Transcript',
+                  ].join(' · '),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(sheetCtx).pop();
+                  _openTranscriptModal(context, c);
+                },
+              ),
+              const SizedBox(height: V360Spacing.s2),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openTranscriptModal(BuildContext context, CallHistory c) {
+    final name = (c.name ?? '').isNotEmpty
+        ? c.name!
+        : (c.numberToDial ?? 'Caller');
+    final url = c.hasRecording ? CallMedia.recordingUrl(c.cdrPk) : null;
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => TranscriptModal(
+          recordingUrl: url,
+          transcription: c.callTranscription,
+          callerLabel: name,
+          myLabel: 'You',
+          durationSeconds: c.duration,
+          filename: 'call-${c.cdrPk ?? "recording"}.wav',
+        ),
+      ),
+    );
+  }
+
+  String _formatDuration(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m}:${s.toString().padLeft(2, '0')}';
+  }
+
+  String _typeLabel({required bool missed, required bool inbound}) {
+    if (missed) return 'Missed';
+    if (inbound) return 'Inbound';
+    return 'Outbound';
+  }
+
+  String _formatTime(DateTime? t) {
+    if (t == null) return '';
+    final hh = t.hour > 12 ? t.hour - 12 : (t.hour == 0 ? 12 : t.hour);
+    final mm = t.minute.toString().padLeft(2, '0');
+    final ampm = t.hour >= 12 ? 'PM' : 'AM';
+    return '$hh:$mm $ampm';
+  }
+}
+
+class _CallHistoryLoading extends StatelessWidget {
+  const _CallHistoryLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: 8,
+      padding: const EdgeInsets.all(V360Spacing.s4),
+      itemBuilder: (_, __) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: V360Spacing.s2),
+          child: Row(
+            children: [
+              V360Skeleton.circle(size: 44),
+              const SizedBox(width: V360Spacing.s3),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    V360Skeleton.line(width: 140, height: 14),
+                    const SizedBox(height: 6),
+                    V360Skeleton.line(width: 90, height: 12),
+                  ],
+                ),
+              ),
+              V360Skeleton.line(width: 36, height: 12),
+            ],
+          ),
+        );
+      },
+    );
   }
 }

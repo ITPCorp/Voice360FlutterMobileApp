@@ -104,7 +104,7 @@ class _VoiceMailPlayerState extends State<VoiceMailPlayer> {
   void _playOrPlausePlayer(PlayerController controller) async {
     controller.playerState == PlayerState.playing
         ? await controller.pausePlayer()
-        : await controller.startPlayer(finishMode: FinishMode.loop);
+        : await controller.startPlayer();
 
     // controller.getDuration();
   }

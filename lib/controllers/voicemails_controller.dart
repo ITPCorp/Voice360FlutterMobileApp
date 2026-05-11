@@ -2,9 +2,10 @@ import 'dart:io';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
 import 'package:dio/dio.dart';
-import 'package:downloads_path_provider_28/downloads_path_provider_28.dart';
+// downloads_path_provider_28 is dead (Flutter v1 embedding); using path_provider instead
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/cache/cache_service.dart';
 import 'package:itp_voice/models/get_voice_mails_response_model/get_voice_mails_response_model.dart';
 import 'package:itp_voice/models/get_voice_mails_response_model/result.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
@@ -30,18 +31,31 @@ class VoiceMailsController extends GetxController {
   VoiceMailsRepo repo = VoiceMailsRepo();
   TextEditingController searchController = TextEditingController();
 
+  bool _hydratedFromCache = false;
+  bool get hasCachedData => _hydratedFromCache;
+
+  void _hydrateFromCache() {
+    if (!AppCache.instance.isReady || _hydratedFromCache) return;
+    final cached = AppCache.instance.voicemails.readAll();
+    if (cached.isEmpty) return;
+    voiceMails = List.from(cached);
+    _hydratedFromCache = true;
+    update();
+  }
+
   fetchVoiceMails() async {
-    voiceMails.clear();
-    isVoiceMailsLoading = true;
+    _hydrateFromCache();
+    // Show loading state only when we have nothing on screen.
+    isVoiceMailsLoading = voiceMails.isEmpty;
     update();
 
     final res = await repo.getVoiceMails();
     isVoiceMailsLoading = false;
-    update();
-    if (res.runtimeType == GetVoiceMailsResponseModel) {
-      GetVoiceMailsResponseModel model = res;
-      for (int i = 0; i < model.voiceMails!.length; i++) {
-        voiceMails.add(model.voiceMails![i]);
+    if (res is GetVoiceMailsResponseModel) {
+      final fresh = res.voiceMails ?? const [];
+      voiceMails = List.from(fresh);
+      if (AppCache.instance.isReady) {
+        AppCache.instance.voicemails.writeAll(voiceMails);
       }
     }
     update();
@@ -53,9 +67,14 @@ class VoiceMailsController extends GetxController {
     var res = await repo.deleteVoicemail(id);
     Get.back();
 
-    if (res.runtimeType == String) {
+    if (res is String) {
       CustomToast.showToast(res, true);
     } else {
+      voiceMails.removeWhere((v) => v.msgId == id);
+      if (AppCache.instance.isReady) {
+        AppCache.instance.voicemails.remove(id?.toString() ?? '');
+      }
+      update();
       fetchVoiceMails();
     }
   }
@@ -90,9 +109,9 @@ class VoiceMailsController extends GetxController {
     ].request();
 
     if (statuses[Permission.storage]!.isGranted) {
-      Directory? directory = await DownloadsPathProvider.downloadsDirectory;
-      var dir = await directory!.path;
-      if (dir != null) {
+      Directory? directory = await getApplicationDocumentsDirectory();
+      var dir = directory.path;
+      if (dir.isNotEmpty) {
         savePath = dir + "/ITP Voicemails/voicemail_$id.mp3";
 
         try {

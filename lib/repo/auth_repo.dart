@@ -194,6 +194,81 @@ class AuthRepo {
     }
   }
 
+  /// Sign in via an SSO bearer token returned from the OAuth callback URL
+  /// (`itpvoice://login?token=<jwt>`).
+  ///
+  /// The token is a portal-scoped JWT. Use it to call `/portal/crm/auth/refresh`,
+  /// which returns the full `LoginReponseModel` (access + refresh + user data).
+  /// From there we run the same chain as email/password login.
+  Future<dynamic> loginWithSsoToken(String ssoToken) async {
+    try {
+      // Pre-seed REFRESH_TOKEN so BaseRequester picks it up for the
+      // Authorization header on the refresh call below.
+      await SharedPreferencesMethod.setString(StorageKeys.REFRESH_TOKEN, ssoToken);
+
+      final apiResponse = await BaseRequesterMethods.baseRequester
+          .baseGetAPI(Endpoints.REFRESH_TOKEN_URL);
+      if (apiResponse == null) {
+        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+        return 'Could not complete sign-in. Please try again.';
+      }
+      if (apiResponse['errors'] == true) {
+        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+        return apiResponse['message'] ?? 'Sign-in failed.';
+      }
+
+      // The refresh endpoint returns the user object at the top level
+      // (not under `result`). Wrap it so AppUser.fromMap below can consume it.
+      final result = apiResponse['result'] ?? apiResponse;
+      LoginReponseModel response =
+          LoginReponseModel.fromMap({'result': result, 'errors': false, 'message': 'ok'});
+
+      if (response.result?.refreshToken == null ||
+          response.result?.accessToken == null) {
+        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+        return 'Sign-in response was missing tokens.';
+      }
+
+      SharedPreferencesMethod.setString(
+          StorageKeys.REFRESH_TOKEN, response.result!.refreshToken);
+      if (response.result!.timeZone != null) {
+        SharedPreferencesMethod.setString(
+            StorageKeys.TIME_ZONE, response.result!.timeZone);
+      }
+
+      final devicesApiResponse = await getDevices();
+      if (devicesApiResponse.runtimeType == String) {
+        SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+        return devicesApiResponse;
+      }
+      if (devicesApiResponse == true) {
+        final userIdApiResponse = await getUserID();
+        if (userIdApiResponse.runtimeType == String) {
+          SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+          return userIdApiResponse;
+        }
+        if (userIdApiResponse == true) {
+          SharedPreferencesMethod.setString(
+              StorageKeys.ACCESS_TOKEN, response.result!.accessToken);
+          // SSO users always go through the OAuth flow each launch — no
+          // saved credentials to remember.
+          SharedPreferencesMethod.setbool(StorageKeys.REMEMBER, false);
+          SharedPreferencesMethod.storage.remove(StorageKeys.EMAIL);
+          SharedPreferencesMethod.storage.remove(StorageKeys.PASSWORD);
+          SharedPreferencesMethod.setString(
+              StorageKeys.APPUSER_DATA, json.encode(response.result!.toMap()));
+          SharedPreferencesMethod.getUserData();
+          return true;
+        }
+      }
+      return 'Could not complete sign-in. Please try again.';
+    } catch (e) {
+      print('SSO login error: $e');
+      await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+      return 'Sign-in failed. Please try again.';
+    }
+  }
+
   reLoginUser() async {
     String email = SharedPreferencesMethod.getString(StorageKeys.EMAIL)!;
     String password = SharedPreferencesMethod.getString(StorageKeys.PASSWORD)!;

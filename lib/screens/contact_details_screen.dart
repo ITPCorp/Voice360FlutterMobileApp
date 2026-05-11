@@ -1,24 +1,17 @@
-import 'package:alphabet_list_view/alphabet_list_view.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/app_theme.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/contacts_controller.dart';
-import 'package:itp_voice/models/contact_list_data_model.dart';
+import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/locator.dart';
+import 'package:itp_voice/models/get_contacts_reponse_model/contact_response.dart';
 import 'package:itp_voice/routes.dart';
-import 'package:itp_voice/widgets/search_textfield.dart';
-import 'package:itp_voice/widgets/text_container.dart';
-import 'package:itp_voice/temp_data.dart' as repo;
-
-import '../models/get_contacts_reponse_model/contact_response.dart';
+import 'package:itp_voice/services/numbers_service.dart';
+import 'package:itp_voice/services/threads_cache.dart';
 
 class ContactDetailsScreen extends StatefulWidget {
-  ContactDetailsScreen({
-    Key? key,
-  }) : super(key: key);
+  const ContactDetailsScreen({super.key});
 
   @override
   State<ContactDetailsScreen> createState() => _ContactDetailsScreenState();
@@ -26,239 +19,363 @@ class ContactDetailsScreen extends StatefulWidget {
 
 class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
   Contact? contact;
-  BaseScreenController baseController = Get.find<BaseScreenController>();
-  ContactsController con = Get.find<ContactsController>();
+  final BaseScreenController base = Get.find<BaseScreenController>();
+  final ContactsController con = Get.find<ContactsController>();
 
   @override
   void initState() {
-    // TODO: implement initState
     super.initState();
-    contact = Get.arguments;
+    final args = Get.arguments;
+    if (args is Map && args['contact'] is Contact) {
+      contact = args['contact'] as Contact;
+    } else if (args is Contact) {
+      contact = args;
+    }
+
+    // Pre-warm the threads cache for the user's primary chat number so the
+    // chat screen can answer "does a thread exist for this peer?" instantly
+    // if the user taps Message. Fire-and-forget — no UI dependency.
+    final myNumbers = locator<NumbersService>().chatNumbers;
+    if (myNumbers.isNotEmpty) {
+      locator<ThreadsCache>().warm(myNumbers.first);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return GetBuilder(
-        init: con,
-        builder: (ContactsController value) {
-          return Scaffold(
-            appBar: AppBar(
-              automaticallyImplyLeading: false,
-              leading: Container(
-                margin: EdgeInsets.only(top: 10.h, left: 15.w),
-                child: GestureDetector(
-                    onTap: () {
-                      Get.back();
-                    },
-                    child: Icon(Icons.arrow_back_ios, color: AppTheme.colors(context)?.textColor, size: 18.sp)),
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    final c = contact;
+    if (c == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: const V360EmptyState(
+          icon: Icons.person_off_outlined,
+          title: 'Contact not found',
+        ),
+      );
+    }
+    final fullName =
+        ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
+    final displayName = fullName.isEmpty ? '(No name)' : fullName;
+
+    return Scaffold(
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 240,
+            pinned: true,
+            backgroundColor: cs.surface,
+            foregroundColor: cs.onSurface,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: 'Edit',
+                onPressed: () => Get.toNamed(
+                  Routes.EDIT_CONTACT_ROUTE,
+                  arguments: {'contact': c},
+                ),
               ),
-              actions: [
-                GestureDetector(
+              IconButton(
+                icon: const Icon(Icons.more_vert_rounded),
+                tooltip: 'More',
+                onPressed: () => _showActions(context, c),
+              ),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      cs.primaryContainer,
+                      cs.surface,
+                    ],
+                  ),
+                ),
+                child: SafeArea(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const SizedBox(height: V360Spacing.s8),
+                        V360Avatar(name: displayName, size: 96),
+                        const SizedBox(height: V360Spacing.s3),
+                        Text(
+                          displayName,
+                          style: tt.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(V360Spacing.s4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _quickAction(
+                    icon: Icons.call_rounded,
+                    label: 'Call',
+                    color: V360Colors.callAccept,
+                    onTap: c.phone == null || c.phone!.isEmpty
+                        ? null
+                        : () => base.handleCall(c.phone!, context),
+                  ),
+                  _quickAction(
+                    icon: Icons.chat_bubble_rounded,
+                    label: 'Message',
+                    color: V360Colors.primary500,
+                    onTap: c.phone == null || c.phone!.isEmpty
+                        ? null
+                        : () => Get.toNamed(
+                              Routes.CHAT_SCREEN_ROUTE,
+                              arguments: [null, c.phone, c],
+                            ),
+                  ),
+                  _quickAction(
+                    icon: Icons.mail_outline_rounded,
+                    label: 'Email',
+                    color: V360Colors.info500,
+                    onTap: c.email == null || c.email!.isEmpty
+                        ? null
+                        : () {
+                            // mail launcher hook — left to existing util
+                          },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (c.phone != null && c.phone!.isNotEmpty)
+                    _infoCard(
+                      icon: Icons.phone_outlined,
+                      label: 'Phone',
+                      value: c.phone!,
+                    ),
+                  if (c.email != null && c.email!.isNotEmpty)
+                    _infoCard(
+                      icon: Icons.alternate_email_rounded,
+                      label: 'Email',
+                      value: c.email!,
+                    ),
+                  if (c.notes != null && c.notes!.isNotEmpty)
+                    _infoCard(
+                      icon: Icons.notes_rounded,
+                      label: 'Notes',
+                      value: c.notes!,
+                      multiline: true,
+                    ),
+                  if ((c.address != null && c.address.toString().trim().isNotEmpty) ||
+                      (c.city != null && c.city.toString().trim().isNotEmpty))
+                    _infoCard(
+                      icon: Icons.location_on_outlined,
+                      label: 'Address',
+                      value: [
+                        if (c.address != null) c.address.toString(),
+                        if (c.city != null) c.city.toString(),
+                      ].where((s) => s.trim().isNotEmpty).join(', '),
+                    ),
+                  const SizedBox(height: V360Spacing.s10),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    VoidCallback? onTap,
+  }) {
+    final disabled = onTap == null;
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: disabled ? color.withOpacity(0.25) : color,
+              shape: BoxShape.circle,
+              boxShadow: disabled
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: color.withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 26),
+          ),
+          const SizedBox(height: V360Spacing.s2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: disabled
+                  ? Theme.of(context).colorScheme.onSurfaceVariant
+                  : Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    bool multiline = false,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: V360Spacing.s3),
+      child: V360Card(
+        onTap: multiline
+            ? null
+            : () {
+                Clipboard.setData(ClipboardData(text: value));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('$label copied')),
+                );
+              },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: cs.primaryContainer.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(V360Radius.lg),
+              ),
+              child: Icon(icon, color: cs.primary, size: 18),
+            ),
+            const SizedBox(width: V360Spacing.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: tt.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      letterSpacing: 0.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: tt.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: multiline ? 6 : 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showActions(BuildContext context, Contact c) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: V360Spacing.s2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Edit contact'),
                   onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      useRootNavigator: true,
-                      builder: (context) {
-                        return Container(
-                          height: 170.h,
-                          padding: EdgeInsets.symmetric(horizontal: 20.w),
-                          child: Column(children: [
-                            SizedBox(height: 10.h),
-                            Divider(
-                              color: Colors.grey.shade400,
-                              thickness: 3,
-                              indent: 140.w,
-                              endIndent: 140.w,
-                            ),
-                            Align(
-                              alignment: Alignment.center,
-                              child: Text(
-                                "Actions",
-                                style: TextStyle(
-                                    fontSize: 18.sp,
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.secondary),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 20.h,
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                // Get.toNamed(Routes.CALL_HISTORY_SCREEN_ROUTE);
-                                Get.toNamed(Routes.EDIT_CONTACT_ROUTE, arguments: {'contact': contact});
-                              },
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  "Edit",
-                                  style: TextStyle(fontSize: 18.sp, color: Theme.of(context).colorScheme.secondary),
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 20.h,
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                // Get.toNamed(Routes.CALL_HISTORY_SCREEN_ROUTE);\
-                                con.deleteContact(contact!.pk);
-                              },
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  "Delete",
-                                  style: TextStyle(fontSize: 18.sp, color: Theme.of(context).colorScheme.secondary),
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 20.h,
-                            ),
-                          ]),
-                        );
-                      },
+                    Get.back();
+                    Get.toNamed(
+                      Routes.EDIT_CONTACT_ROUTE,
+                      arguments: {'contact': c},
                     );
                   },
-                  child: Container(
-                    margin: EdgeInsets.only(right: 20.w, top: 10.h),
-                    child: Icon(Icons.more_vert, color: Color(0xff6B6F80), size: 22.sp),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline_rounded,
+                      color: V360Colors.danger500),
+                  title: const Text(
+                    'Delete contact',
+                    style: TextStyle(color: V360Colors.danger500),
                   ),
-                )
+                  onTap: () => _confirmDelete(context, c),
+                ),
               ],
-              elevation: 0,
-              backgroundColor: Colors.transparent,
-              centerTitle: true,
-              title: Container(
-                padding: EdgeInsets.only(top: 10.h),
-                child: Text(
-                  "Contact Details",
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.secondary,
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
             ),
-            body: SingleChildScrollView(
-              child: Container(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Divider(
-                      height: 0,
-                    ),
-                    SizedBox(
-                      height: 20.h,
-                    ),
-                    Align(
-                      alignment: Alignment.center,
-                      child: TextBox(
-                        text: contact!.firstname![0].toUpperCase() + contact!.firstname![1].toUpperCase(),
-                        height: 100.h,
-                        width: 100.h,
-                        singleCharFontSize: 30.sp,
-                        doubleCharFontSize: 24.sp,
-                      ),
-                    ),
-                    SizedBox(
-                      height: 10.h,
-                    ),
-                    Align(
-                      alignment: Alignment.center,
-                      child: Text(
-                        "${contact!.firstname} ${contact!.lastname}",
-                        style: TextStyle(
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 20.h,
-                    ),
-                    Divider(
-                      indent: 20.w,
-                      endIndent: 20.w,
-                    ),
-                    ListView.builder(
-                      itemCount: 1, //contact!.numbers!.length,
-                      shrinkWrap: true,
-                      itemBuilder: (BuildContext context, int index) {
-                        return ListTile(
-                          title: Text(
-                            contact!.phone ?? '',
-                            style: TextStyle(
-                              color: AppTheme.colors(context)?.textColor,
-                              fontSize: 17.sp,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          dense: true,
-                          trailing: Container(
-                            // color: Colors.blue,
-                            width: 100.w,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    baseController.handleCall(contact!.phone!, context);
-                                  },
-                                  child: Container(
-                                    padding: EdgeInsets.all(7.h),
-                                    decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.all(
-                                          Radius.circular(8),
-                                        ),
-                                        gradient: LinearGradient(colors: [
-                                          Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                                          Theme.of(context).colorScheme.primary,
-                                        ])),
-                                    child: Container(
-                                      height: 15.h,
-                                      width: 15.h,
-                                      child: Image.asset(
-                                        'assets/images/dial.png',
-                                        height: 12.h,
-                                        width: 12.h,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: 15.w,
-                                ),
-                                Container(
-                                  padding: EdgeInsets.all(7.h),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.all(
-                                      Radius.circular(8),
-                                    ),
-                                    border: Border.all(
-                                      color: Theme.of(context).colorScheme.primary,
-                                    ),
-                                  ),
-                                  child: Container(
-                                    height: 15.h,
-                                    width: 15.h,
-                                    child: Image.asset(
-                                      'assets/images/sms.png',
-                                    ),
-                                  ),
-                                )
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDelete(BuildContext context, Contact c) {
+    Get.back();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Delete contact?'),
+        content:
+            const Text('This will remove the contact from your account.'),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: V360Colors.danger500,
             ),
-          );
-        });
+            onPressed: () {
+              Get.back();
+              con.deleteContact(c.pk);
+              Get.back();
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -124,8 +124,15 @@ class Endpoints {
     return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/contacts?unlimit=true";
   }
 
-  static String SEARCH_CONTACTS_URL(api_id,offSet,query) {
-    return 'https://api.itpscorp.com/portal/360/accounts/${api_id}/my-account/contacts?offset=$offSet&limit=20&firstname=$query&lastname=$query';
+  static String SEARCH_CONTACTS_URL(api_id, offSet, query) {
+    // voice360-fe uses `name=` (single param; the server does a fuzzy match
+    // across first+last). The mobile app used to set BOTH `firstname=` and
+    // `lastname=` to the same query, which the server interpreted as an OR,
+    // causing duplicate rows when a contact matched both sides. Aligning
+    // with the web behaviour fixes that.
+    final encoded = Uri.encodeQueryComponent(query);
+    return 'https://api.itpscorp.com/portal/360/accounts/$api_id'
+        '/my-account/contacts?offset=$offSet&limit=20&name=$encoded';
   }
 
   static String GET_VOICE_MAILS_URL(api_id) {
@@ -148,8 +155,15 @@ class Endpoints {
     return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension";
   }
 
-  static String GET_CALL_HISTORY(api_id,offset) {
-    return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/cdr?limit=${apiLimit}&offset=${offset}";
+  static String GET_CALL_HISTORY(api_id, offset, {int? startMs, int? endMs}) {
+    // Matches the web client: /my-extension/call-reports with millisecond
+    // Unix timestamps for start_date/end_date. Without a date range the
+    // backend can scan an unbounded CDR set and 500 on malformed rows.
+    final params = StringBuffer('?limit=${apiLimit}&offset=${offset}');
+    if (startMs != null) params.write('&start_date=$startMs');
+    if (endMs != null) params.write('&end_date=$endMs');
+    return Config.BASE_URL_ITP_VOICE +
+        "${api_id}/my-extension/call-reports${params.toString()}";
   }
 
   static String VALIDATE_PHONE_NUMBER(api_id) {

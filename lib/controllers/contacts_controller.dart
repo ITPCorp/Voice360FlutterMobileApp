@@ -1,319 +1,190 @@
-import 'package:alphabet_list_view/alphabet_list_view.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/helpers/config.dart';
-import 'package:itp_voice/models/contact_list_data_model.dart';
+import 'package:itp_voice/cache/cache_service.dart';
 import 'package:itp_voice/models/get_contacts_reponse_model/contact_response.dart';
-import 'package:itp_voice/models/get_contacts_reponse_model/get_contacts_reponse_model.dart';
 import 'package:itp_voice/repo/contacts_repo.dart';
-import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/widgets/custom_loader.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
-import 'package:itp_voice/widgets/text_container.dart';
 
+/// Owns the contacts list AND the search/autocomplete flow.
+///
+/// Two distinct lists live here:
+///   - `_allContacts`   — the unfiltered, paginated full list backing the
+///                        Contacts tab. Persisted to disk.
+///   - `_searchResults` — the **transient** result list rendered while a
+///                        search query is active. Never persisted.
+///
+/// The UI calls [getDataList] which returns whichever list is appropriate.
+/// This separation kills the previous "search results duplicate into the
+/// main list" class of bugs — search no longer mutates `_allContacts`.
+///
+/// Search uses a **request-id guard** so out-of-order responses from
+/// keystroke-burst typing can't clobber a more recent query. Each new
+/// request bumps `_searchRequestId`; only responses tagged with the latest
+/// id are accepted.
 class ContactsController extends GetxController {
   bool isContactsLoading = false;
   ContactsRepo repo = ContactsRepo();
-  Map<String, List<String>> filteredData = {};
-  List<Contact> unfilteredData = [];
-  List<AlphabetListViewItemGroup> contacts = [];
+
+  // -- Full list (paginated)
+  List<Contact> _allContacts = [];
+  // Kept for backwards-compat with the few places that read it directly.
+  // Don't add to this from anywhere new — use getDataList() instead.
+  List<Contact> get unfilteredData => _allContacts;
+
+  // -- Search state
   TextEditingController searchController = TextEditingController();
-  RxInt conOffSet=0.obs,totalPages=0.obs,currentPage=0.obs,totalCount=0.obs;
+  String _activeSearchQuery = '';
+  List<Contact> _searchResults = const [];
+  int _searchRequestId = 0;
+  bool isSearching = false;
 
-  fetchContacts(String offSet) async {
-    if(offSet == '0') {
-      unfilteredData.clear();
-      conOffSet.value=0;
-      totalPages.value=0;
-      totalCount.value=0;
-      currentPage.value=0;
-      isContactsLoading = true;
-    }
+  RxInt conOffSet = 0.obs,
+      totalPages = 0.obs,
+      currentPage = 0.obs,
+      totalCount = 0.obs;
 
-    update();
-    final res = await repo.getContacts(offSet,);
-    isContactsLoading = false;
-    print("~~~~~~~~~~~~~~~~${res.runtimeType}~~~~~~~~~~~~~~~${res.runtimeType}");
+  bool _hydratedFromCache = false;
+  bool get hasCachedData => _hydratedFromCache;
 
-    if (res.runtimeType == ContactResponse) {
-      print("**************INIT DATA ${unfilteredData.length}  ");
-      ContactResponse model = res;
-      print("**************TOTAL DATA ${model.itemCount!}  ");
-      totalPages.value=model.totalPages!;
-      totalCount.value=model.itemCount!;
-      currentPage.value = 1 + currentPage.value ;
-      conOffSet.value=conOffSet.value+20;
+  @override
+  void onInit() {
+    super.onInit();
+    _hydrateFromCache();
+  }
 
-
-      if (model.result!.isNotEmpty) {
-        for (int i = 0; i < Helpers.alphabet.length; i++) {
-          filteredData.putIfAbsent(Helpers.alphabet[i], () => [""]);
-          for (int j = 0; j < model.result!.length; j++) {
-            if(model.result![j].firstname!.isNotEmpty) {
-              if (Helpers.alphabet[i] ==
-                  model.result![j].firstname![0].toLowerCase()) {
-                filteredData[Helpers.alphabet[i]]!.add(
-                    model.result![j].firstname.toString() +
-                        model.result![j].pk.toString());
-
-                unfilteredData.add(model.result![j]);
-              }
-            }
-          }
-        }
-        print("FILTERED DATA");
-        print(filteredData);
-        print("**************END FUNCTION CALL API DATA ${unfilteredData.length}");
-      }
-    }
-    generateWidgetList();
+  void _hydrateFromCache() {
+    if (!AppCache.instance.isReady) return;
+    final cached = AppCache.instance.contacts.readAll();
+    if (cached.isEmpty) return;
+    _allContacts = cached;
+    _hydratedFromCache = true;
     update();
   }
 
-  searchContacts(String offSet,String query) async {
-    if(offSet == '0') {
-      unfilteredData.clear();
-      conOffSet.value=0;
-      totalPages.value=0;
-      currentPage.value=0;
-      totalCount.value=0;
-      isContactsLoading = true;
+  /// Fetch a page of the full contacts list. Page 0 replaces the in-memory
+  /// list atomically; later pages append. Never mutated by search.
+  Future<void> fetchContacts(String offSet) async {
+    if (offSet == '0') {
+      conOffSet.value = 0;
+      totalPages.value = 0;
+      totalCount.value = 0;
+      currentPage.value = 0;
+      isContactsLoading = !_hydratedFromCache && _allContacts.isEmpty;
+      update();
     }
 
-    update();
-    final res = await repo.searchContacts(offSet,query);
+    final res = await repo.getContacts(offSet);
     isContactsLoading = false;
-    print("~~~~~~~~~~~~~~~~${res.runtimeType}~~~~~~~~~~~~~~~${res.runtimeType}");
 
-    if (res.runtimeType == ContactResponse) {
-      print("**************INIT DATA ${unfilteredData.length}");
-      ContactResponse model = res;
-
-      totalPages.value=model.totalPages!;
-      totalCount.value=model.itemCount!;
-      currentPage.value = 1 + currentPage.value ;
-      conOffSet.value=conOffSet.value+20;
-
-
-      if (model.result!.isNotEmpty) {
-        for (int i = 0; i < Helpers.alphabet.length; i++) {
-          filteredData.putIfAbsent(Helpers.alphabet[i], () => [""]);
-          for (int j = 0; j < model.result!.length; j++) {
-            if (Helpers.alphabet[i] ==
-                model.result![j].firstname![0].toLowerCase()) {
-              filteredData[Helpers.alphabet[i]]!.add(
-                  model.result![j].firstname.toString() +
-                      model.result![j].pk.toString());
-
-              unfilteredData.add(model.result![j]);
-            }
+    if (res is ContactResponse) {
+      totalPages.value = res.totalPages ?? 0;
+      totalCount.value = res.itemCount ?? 0;
+      currentPage.value = currentPage.value + 1;
+      conOffSet.value = conOffSet.value + 20;
+      if (res.result != null) {
+        final filtered = res.result!
+            .where((c) => (c.firstname != null && c.firstname!.isNotEmpty))
+            .toList();
+        if (offSet == '0') {
+          _allContacts = filtered;
+        } else {
+          // De-dupe on pk so re-fetches don't double rows.
+          final seen = _allContacts.map((c) => c.pk).toSet();
+          for (final c in filtered) {
+            if (!seen.contains(c.pk)) _allContacts.add(c);
           }
         }
-        print("FILTERED DATA");
-        print(filteredData);
-        print("**************END FUNCTION CALL API DATA ${unfilteredData.length}");
+        if (AppCache.instance.isReady) {
+          AppCache.instance.contacts.writeAll(_allContacts);
+        }
       }
     }
-    generateWidgetList();
     update();
   }
 
-  deleteContact(id) async {
+  /// Apply a server-side search for [query]. Tagged with a request id so
+  /// stale responses are silently dropped.
+  Future<void> searchContacts(String query) async {
+    final myId = ++_searchRequestId;
+    _activeSearchQuery = query;
+    isSearching = true;
+    update();
+
+    final res = await repo.searchContacts('0', query);
+
+    // Stale response — a newer query was issued after we kicked this off.
+    // Drop the result on the floor. The newer call will update the UI.
+    if (myId != _searchRequestId) return;
+    // Query was cleared while waiting.
+    if (_activeSearchQuery.isEmpty) return;
+
+    isSearching = false;
+    if (res is ContactResponse && res.result != null) {
+      final filtered = res.result!
+          .where((c) => (c.firstname != null && c.firstname!.isNotEmpty))
+          .toList();
+      // De-dupe just in case the backend returns the same pk twice.
+      final seen = <int?>{};
+      _searchResults = [
+        for (final c in filtered)
+          if (seen.add(c.pk)) c
+      ];
+    } else {
+      _searchResults = const [];
+    }
+    update();
+  }
+
+  /// Cancel the active search and reset to the full list. Idempotent.
+  void clearSearch() {
+    _searchRequestId++; // invalidate any in-flight searches
+    _activeSearchQuery = '';
+    _searchResults = const [];
+    isSearching = false;
+    searchController.clear();
+    update();
+  }
+
+  Future<void> deleteContact(int? id) async {
+    if (id == null) return;
     Get.back();
     CustomLoader.showLoader();
-    var res = await repo.deleteContact(id);
+    final res = await repo.deleteContact(id);
     Get.back();
 
-    if (res.runtimeType == String) {
+    if (res is String) {
       CustomToast.showToast(res, true);
     } else {
       Get.back();
-      unfilteredData.removeWhere((element) => element.pk == id);
+      _allContacts.removeWhere((c) => c.pk == id);
+      _searchResults =
+          _searchResults.where((c) => c.pk != id).toList(growable: false);
+      if (AppCache.instance.isReady) {
+        AppCache.instance.contacts.remove(id);
+      }
       update();
     }
   }
 
-  getDataList() {
-    if (searchController.text.isEmpty) {
-      return unfilteredData;
-    }
-    if (searchController.text.isNotEmpty) {
-      return unfilteredData
-          .where((element) => element.firstname!
-              .toLowerCase()
-              .contains(searchController.text.toLowerCase()))
-          .toList();
-    }
+  /// What the UI renders. Active search → results; otherwise → full list.
+  /// A trailing client-side filter still runs on the full-list path so that
+  /// users see instant filtering before the network search lands.
+  List<Contact> getDataList() {
+    final query = searchController.text.trim();
+    if (query.isEmpty) return _allContacts;
+
+    // Active server search — render those results.
+    if (_activeSearchQuery == query) return _searchResults;
+
+    // Server hasn't responded yet for the current keystroke — show an
+    // instant client-side filter on whatever full-list data we already have.
+    final lc = query.toLowerCase();
+    return _allContacts.where((c) {
+      final name = '${c.firstname ?? ''} ${c.lastname ?? ''}'.toLowerCase();
+      final phone = (c.phone ?? '').toLowerCase();
+      final email = (c.email ?? '').toLowerCase();
+      return name.contains(lc) || phone.contains(lc) || email.contains(lc);
+    }).toList(growable: false);
   }
-
-  generateWidgetList() {
-    contacts = [
-      for (var contactLetter in filteredData.entries)
-        AlphabetListViewItemGroup(
-          tag: contactLetter.key,
-          children: contactLetter.value
-              .map(
-                (contact) => GestureDetector(
-                  onTap: () {
-                    Get.toNamed(Routes.CONTACT_DETAIS_SCREEN_ROUTE);
-                  },
-                  child: Container(
-                    margin:
-                        EdgeInsets.symmetric(vertical: 10.h, horizontal: 10.w),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        TextBox(
-                          text: contact.isEmpty ? "-" : contact[0],
-                        ),
-                        SizedBox(width: 15.w),
-                        Container(
-                          alignment: Alignment.centerLeft,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    "${contact}",
-                                    // style: ts(1, 0xff1B1A57, 14.sp, 5),
-                                    maxLines: 2,
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15.sp,
-                                        overflow: TextOverflow.ellipsis),
-                                  ),
-                                  SizedBox(
-                                    width: 5.w,
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-        ),
-    ];
-
-    update();
-    // contacts.toList().clear();
-    // for (int i = 0; i < filteredData.entries.length; i++) {
-    //   List<Widget> childrens = [];
-    //   for (int j = 0; j < filteredData.entries.toList()[i].value.length; j++) {
-    //     childrens.add(
-    //       GestureDetector(
-    //         onTap: () {
-    //           Get.toNamed(Routes.CONTACT_DETAIS_SCREEN_ROUTE);
-    //         },
-    //         child: Container(
-    //           margin: EdgeInsets.symmetric(vertical: 10.h, horizontal: 10.w),
-    //           child: Row(
-    //             mainAxisSize: MainAxisSize.max,
-    //             children: [
-    //               TextBox(
-    //                 text: filteredData.entries.toList()[i].value[j].name![0],
-    //               ),
-    //               SizedBox(width: 15.w),
-    //               Container(
-    //                 alignment: Alignment.centerLeft,
-    //                 child: Column(
-    //                   mainAxisAlignment: MainAxisAlignment.center,
-    //                   crossAxisAlignment: CrossAxisAlignment.start,
-    //                   children: [
-    //                     Row(
-    //                       children: [
-    //                         Text(
-    //                           "${filteredData.entries.toList()[i].value[j].name}",
-    //                           // style: ts(1, 0xff1B1A57, 14.sp, 5),
-    //                           maxLines: 2,
-    //                           style: TextStyle(
-    //                               fontWeight: FontWeight.w600,
-    //                               fontSize: 15.sp,
-    //                               overflow: TextOverflow.ellipsis),
-    //                         ),
-    //                         SizedBox(
-    //                           width: 5.w,
-    //                         ),
-    //                       ],
-    //                     ),
-    //                   ],
-    //                 ),
-    //               ),
-    //             ],
-    //           ),
-    //         ),
-    //       ),
-    //     );
-    //   }
-    //   AlphabetListViewItemGroup item = AlphabetListViewItemGroup(
-    //       tag: filteredData.entries.toList()[i].key, children: childrens);
-
-    //   contacts.add(item);
-    // }
-    // update();
-    // print(contacts.length);
-    // for (var letters in filteredData.entries) {
-    //   AlphabetListViewItemGroup item = AlphabetListViewItemGroup(
-    //       tag: letters.key,
-    //       children: letters.value.map(
-    //         (contact) => GestureDetector(
-    //           onTap: () {
-    //             Get.toNamed(Routes.CONTACT_DETAIS_SCREEN_ROUTE);
-    //           },
-    //           child: Container(
-    //             margin: EdgeInsets.symmetric(vertical: 10.h, horizontal: 10.w),
-    //             child: Row(
-    //               mainAxisSize: MainAxisSize.max,
-    //               children: [
-    //                 TextBox(
-    //                   text: contact.name![0],
-    //                 ),
-    //                 SizedBox(width: 15.w),
-    //                 Container(
-    //                   alignment: Alignment.centerLeft,
-    //                   child: Column(
-    //                     mainAxisAlignment: MainAxisAlignment.center,
-    //                     crossAxisAlignment: CrossAxisAlignment.start,
-    //                     children: [
-    //                       Row(
-    //                         children: [
-    //                           Text(
-    //                             "${contact.name}",
-    //                             // style: ts(1, 0xff1B1A57, 14.sp, 5),
-    //                             maxLines: 2,
-    //                             style: TextStyle(
-    //                                 fontWeight: FontWeight.w600,
-    //                                 fontSize: 15.sp,
-    //                                 overflow: TextOverflow.ellipsis),
-    //                           ),
-    //                           SizedBox(
-    //                             width: 5.w,
-    //                           ),
-    //                         ],
-    //                       ),
-    //                     ],
-    //                   ),
-    //                 ),
-    //               ],
-    //             ),
-    //           ),
-    //         ),
-    //       ));
-    //   contacts.map((e) => item);
-    // }
-  }
-  //
-  // @override
-  // void onInit() {
-  //   // TODO: implement onInit
-  //   super.onInit();
-  //   fetchContacts();
-  // }
 }

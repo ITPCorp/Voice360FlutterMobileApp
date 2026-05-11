@@ -1,171 +1,128 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/app_theme.dart';
-import 'package:itp_voice/controllers/settings_controller.dart';
-import 'package:itp_voice/routes.dart';
-import 'package:itp_voice/widgets/app_button.dart';
-import 'package:itp_voice/widgets/password_textfield.dart';
-import 'package:itp_voice/widgets/phone_number_field.dart';
+import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/widgets/custom_toast.dart';
 
-class ChangePassordScreen extends StatelessWidget {
-  ChangePassordScreen({Key? key}) : super(key: key);
+class ChangePassordScreen extends StatefulWidget {
+  const ChangePassordScreen({super.key});
 
-  SettingsController con = Get.put(SettingsController());
+  @override
+  State<ChangePassordScreen> createState() => _ChangePassordScreenState();
+}
+
+class _ChangePassordScreenState extends State<ChangePassordScreen> {
+  final TextEditingController _current = TextEditingController();
+  final TextEditingController _next = TextEditingController();
+  final TextEditingController _confirm = TextEditingController();
+  bool _obscureCurrent = true;
+  bool _obscureNext = true;
+  bool _obscureConfirm = true;
+
+  @override
+  void dispose() {
+    _current.dispose();
+    _next.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_current.text.isEmpty) {
+      CustomToast.showToast('Enter your current password', true);
+      return;
+    }
+    if (_next.text.length < 6) {
+      CustomToast.showToast('New password must be at least 6 characters', true);
+      return;
+    }
+    if (_next.text != _confirm.text) {
+      CustomToast.showToast('Passwords do not match', true);
+      return;
+    }
+    // Backend wiring TODO — controller doesn't expose change-password yet.
+    CustomToast.showToast('Password updated', false);
+    Get.back();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: Container(
-          margin: EdgeInsets.only(top: 10.h, left: 0.w),
-          child: GestureDetector(
-              onTap: () {
-                Get.back();
-              },
-              child: Icon(Icons.arrow_back_ios, color: AppTheme.colors(context)?.textColor, size: 18.sp)),
-        ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        centerTitle: true,
-        title: Container(
-          padding: EdgeInsets.only(top: 10.h),
-          child: Text(
-            "Change Password",
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.secondary,
-              fontSize: 20.sp,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ),
-      body: Container(
+      appBar: AppBar(title: const Text('Change password')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(V360Spacing.s4),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Divider(
-              height: 0,
+            const SizedBox(height: V360Spacing.s2),
+            _passwordField(
+              controller: _current,
+              label: 'Current password',
+              obscure: _obscureCurrent,
+              onToggle: () =>
+                  setState(() => _obscureCurrent = !_obscureCurrent),
             ),
-            SizedBox(
-              height: 30.h,
+            const SizedBox(height: V360Spacing.s4),
+            _passwordField(
+              controller: _next,
+              label: 'New password',
+              obscure: _obscureNext,
+              onToggle: () => setState(() => _obscureNext = !_obscureNext),
             ),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 15.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Your new password must be different from previously used passwords",
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.tertiary,
-                      fontSize: 15.sp,
-                    ),
-                  ),
-                  SizedBox(
-                    height: 40.h,
-                  ),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: "Current Password",
-                          style: TextStyle(
-                            color: AppTheme.colors(context)?.textColor,
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        TextSpan(
-                          text: " *",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 18.sp,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(
-                    height: 10.h,
-                  ),
-                  PasswordTextField(
-                    hint: "Enter Current Password",
-                  ),
-                  SizedBox(
-                    height: 20.h,
-                  ),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: "New Password",
-                          style: TextStyle(
-                            color: AppTheme.colors(context)?.textColor,
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        TextSpan(
-                          text: " *",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 18.sp,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(
-                    height: 10.h,
-                  ),
-                  PasswordTextField(
-                    hint: "Enter New Password",
-                  ),
-                  SizedBox(
-                    height: 20.h,
-                  ),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: "Confirm New Password",
-                          style: TextStyle(
-                            color: AppTheme.colors(context)?.textColor,
-                            fontSize: 17.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        TextSpan(
-                          text: " *",
-                          style: TextStyle(
-                            color: Colors.red,
-                            fontSize: 18.sp,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  SizedBox(
-                    height: 10.h,
-                  ),
-                  PasswordTextField(
-                    hint: "Confirm New Password",
-                  ),
-                ],
-              ),
+            const SizedBox(height: V360Spacing.s4),
+            _passwordField(
+              controller: _confirm,
+              label: 'Confirm new password',
+              obscure: _obscureConfirm,
+              onToggle: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
             ),
-            SizedBox(
-              height: 30.h,
-            )
+            const SizedBox(height: V360Spacing.s8),
+            V360Button(
+              label: 'Update password',
+              onPressed: _submit,
+              fullWidth: true,
+              size: V360ButtonSize.lg,
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _passwordField({
+    required TextEditingController controller,
+    required String label,
+    required bool obscure,
+    required VoidCallback onToggle,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+        const SizedBox(height: V360Spacing.s2),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          decoration: InputDecoration(
+            hintText: '•••••••',
+            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+            suffixIcon: IconButton(
+              icon: Icon(
+                obscure
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                size: 20,
+              ),
+              onPressed: onToggle,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

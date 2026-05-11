@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:bubble/bubble.dart';
 import 'package:dio/dio.dart';
-import 'package:downloads_path_provider_28/downloads_path_provider_28.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:floating_bottom_bar/animated_bottom_navigation_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -119,9 +119,8 @@ class _MyMessageChatTileState extends State<MyMessageChatTile> {
                                   isDownloading = true;
                                 });
                                 try {
-                                  Directory? directory = await DownloadsPathProvider.downloadsDirectory;
-                                  var dir = await directory!.path;
-                                  String savePath = dir + "/${widget.fileName}";
+                                  Directory directory = await getApplicationDocumentsDirectory();
+                                  String savePath = directory.path + "/${widget.fileName}";
                                   await Dio().download(widget.media!, savePath);
                                   CustomToast.showToast("Downloaded ${widget.fileName}", false);
                                 } catch (e) {

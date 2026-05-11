@@ -1,272 +1,249 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_switch/flutter_switch.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/app_theme.dart';
+import 'package:itp_voice/cache/cache_service.dart';
 import 'package:itp_voice/controllers/settings_controller.dart';
+import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/repo/auth_repo.dart';
 import 'package:itp_voice/routes.dart';
-import 'package:itp_voice/widgets/app_button.dart';
-import 'package:itp_voice/widgets/phone_number_field.dart';
 
 class SettingsScreen extends StatelessWidget {
-  SettingsScreen({Key? key}) : super(key: key);
-
-  SettingsController con = Get.put(SettingsController());
+  SettingsScreen({super.key});
+  final SettingsController con = Get.put(SettingsController());
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        leading: Container(
-          margin: EdgeInsets.only(top: 10.h, left: 0.w),
-          child: GestureDetector(
-              onTap: () {
-                Get.back();
-              },
-              child: Icon(Icons.arrow_back_ios, color: AppTheme.colors(context)?.textColor, size: 18.sp)),
+      appBar: AppBar(title: const Text('Settings')),
+      body: ListView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: V360Spacing.s4,
+          vertical: V360Spacing.s4,
         ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        centerTitle: true,
-        title: Container(
-          padding: EdgeInsets.only(top: 10.h),
-          child: Text(
-            "Settings",
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.secondary,
-              fontSize: 20.sp,
-              fontWeight: FontWeight.w600,
+        children: [
+          _label('MY NUMBER'),
+          const SizedBox(height: V360Spacing.s2),
+          V360Card(
+            padding: const EdgeInsets.symmetric(
+              horizontal: V360Spacing.s4,
+              vertical: V360Spacing.s3,
+            ),
+            child: Obx(() {
+              return Row(
+                children: [
+                  Icon(Icons.phone_outlined, color: cs.primary, size: 20),
+                  const SizedBox(width: V360Spacing.s3),
+                  Expanded(
+                    child: TextField(
+                      controller: con.myNumberController,
+                      enabled: con.isPhoneEditing.value,
+                      keyboardType: TextInputType.phone,
+                      decoration: const InputDecoration(
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  if (con.isPhoneEditing.value)
+                    TextButton(
+                      onPressed: () async {
+                        await con.updateNumber();
+                        con.isPhoneEditing.value = false;
+                      },
+                      child: const Text('Save'),
+                    )
+                  else
+                    IconButton(
+                      icon: Icon(Icons.edit_outlined, color: cs.primary),
+                      onPressed: () => con.isPhoneEditing.value = true,
+                    ),
+                ],
+              );
+            }),
+          ),
+          const SizedBox(height: V360Spacing.s5),
+          _label('APPEARANCE'),
+          const SizedBox(height: V360Spacing.s2),
+          V360Card(
+            padding: const EdgeInsets.fromLTRB(
+              V360Spacing.s4,
+              V360Spacing.s4,
+              V360Spacing.s4,
+              V360Spacing.s4,
+            ),
+            child: Obx(() {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.dark_mode_outlined, color: cs.primary, size: 20),
+                      const SizedBox(width: V360Spacing.s3),
+                      const Text(
+                        'Appearance',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: V360Spacing.s2),
+                  Text(
+                    'Follow the device theme, or pick a fixed look.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: V360Spacing.s3),
+                  SegmentedButton<AppThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: AppThemeMode.system,
+                        label: Text('System'),
+                        icon: Icon(Icons.phone_iphone_rounded, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: AppThemeMode.light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.light_mode_outlined, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: AppThemeMode.dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.dark_mode_outlined, size: 16),
+                      ),
+                    ],
+                    selected: {con.themeMode.value},
+                    onSelectionChanged: (s) => con.setThemeMode(s.first),
+                    showSelectedIcon: false,
+                  ),
+                ],
+              );
+            }),
+          ),
+          const SizedBox(height: V360Spacing.s5),
+          _label('ACCOUNT'),
+          const SizedBox(height: V360Spacing.s2),
+          V360Card(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _NavRow(
+                  icon: Icons.lock_outline_rounded,
+                  label: 'Change password',
+                  onTap: () => Get.toNamed(Routes.CHANGE_PASSWORD_ROUTE),
+                ),
+                _Sep(),
+                _NavRow(
+                  icon: Icons.phone_callback_rounded,
+                  label: 'Call settings',
+                  onTap: () => Get.toNamed(Routes.CALL_SETTINGS_ROUTE),
+                ),
+              ],
             ),
           ),
-        ),
-      ),
-      body: Obx(
-        () => con.isLoading.value == true
-            ? const Center(
-                child: CircularProgressIndicator(),
-              )
-            : Container(
-                child: Column(
-                  children: [
-                    Divider(
-                      height: 0,
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Get.toNamed(Routes.CHANGE_PASSWORD_ROUTE);
-                      },
-                      child: ListTile(
-                        title: Text(
-                          "Change Password",
-                          style: TextStyle(
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        trailing: Icon(
-                          Icons.arrow_forward_ios,
-                          color: Theme.of(context).colorScheme.tertiary,
-                          size: 18.sp,
-                        ),
-                      ),
-                    ),
-                    Divider(
-                      height: 0,
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        Get.toNamed(Routes.CALL_SETTINGS_ROUTE);
-                      },
-                      child: ListTile(
-                        title: Text(
-                          "Call Settings",
-                          style: TextStyle(
-                            fontSize: 16.sp,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        trailing: Icon(
-                          Icons.arrow_forward_ios,
-                          color: Theme.of(context).colorScheme.tertiary,
-                          size: 18.sp,
-                        ),
-                      ),
-                    ),
-                    Divider(
-                      height: 0,
-                    ),
-                    ListTile(
-                      title: Text(
-                        "Dark mode",
-                        style: TextStyle(
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      trailing: Obx(
-                        () => SizedBox(
-                          width: 70,
-                          child: FlutterSwitch(
-                            height: 22.h,
-                            width: 50.w,
-                            activeColor: Theme.of(context).colorScheme.primary,
-                            padding: 0,
-                            value: con.isDark.value,
-                            onToggle: (val) {
-                              con.isDark.value = val;
-                              con.changeTheme(val);
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    ListTile(
-                      dense: true,
-                      title: Text(
-                        "My Number",
-                        style: TextStyle(
-                          fontSize: 16.sp,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Obx(
-                      () => Column(
-                        children: [
-                          ListTile(
-                              dense: true,
-                              title: Text(
-                                con.myNumberController.text.isEmpty ? "+92XXX-XXXXXXX" : con.myNumberController.text,
-                                style: TextStyle(
-                                  fontSize: 16.sp,
-                                  color: Theme.of(context).colorScheme.tertiary,
-                                ),
-                              ),
-                              trailing: GestureDetector(
-                                onTap: () {
-                                  con.isPhoneEditing.value = true;
-                                },
-                                child: con.isPhoneEditing.value == false
-                                    ? Text(
-                                        "Edit",
-                                        style: TextStyle(
-                                          fontSize: 16.sp,
-                                          color: Theme.of(context).colorScheme.primary,
-                                        ),
-                                      )
-                                    : Container(
-                                        height: 5.h,
-                                        width: 5.h,
-                                      ),
-                              )),
-                          con.isPhoneEditing.value
-                              ? Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 20.w),
-                                  child: PhoneNumberField(
-                                    hint: "+92XXX-XXXXXXX",
-                                    textController: con.myNumberController,
-                                    onChanged: (code) {},
-                                  ),
-                                )
-                              : Container(),
-                          SizedBox(
-                            height: 20.h,
-                          ),
-                          con.isPhoneEditing.value
-                              ? Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 20.w),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      con.isPhoneEditing.value = false;
-                                      con.updateNumber();
-                                    },
-                                    child: AppButton(
-                                      text: "Update",
-                                    ),
-                                  ),
-                                )
-                              : Container(),
-                          !con.isPhoneEditing.value
-                              ? Container()
-                              : SizedBox(
-                                  height: 30.h,
-                                ),
-                        ],
-                      ),
-                    ),
-                    Divider(
-                      height: 0,
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          builder: (BuildContext context) {
-                            return AlertDialog(
-                              contentPadding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 30.w),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              title: Text(
-                                "Logout",
-                                style: TextStyle(
-                                  fontSize: 18.sp,
-                                ),
-                              ),
-                              content: Text(
-                                "Are you sure you want to logout?",
-                                style: TextStyle(fontSize: 16.sp),
-                              ),
-                              actions: <Widget>[
-                                TextButton(
-                                  child: new Text(
-                                    "Yes",
-                                    style: TextStyle(
-                                      color: Colors.red,
-                                    ),
-                                  ),
-                                  onPressed: () async {
-                                    // Navigator.of(context).pop();
-                                    await AuthRepo().logoutUser();
-                                    Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-                                  },
-                                ),
-                                TextButton(
-                                  child: new Text(
-                                    "No",
-                                    style: TextStyle(
-                                      color: Theme.of(context).colorScheme.tertiary,
-                                    ),
-                                  ),
-                                  onPressed: () {
-                                    Navigator.of(context).pop();
-                                  },
-                                ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                      child: ListTile(
-                        dense: true,
-                        title: Text(
-                          "Log out",
-                          style: TextStyle(
-                            fontSize: 16.sp,
-                            color: Colors.red,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          const SizedBox(height: V360Spacing.s5),
+          V360Button(
+            label: 'Log out',
+            variant: V360ButtonVariant.danger,
+            leadingIcon: Icons.logout_rounded,
+            fullWidth: true,
+            onPressed: () => _confirmLogout(context),
+          ),
+          const SizedBox(height: V360Spacing.s10),
+        ],
       ),
     );
   }
+
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Log out?'),
+        content: const Text('You\'ll need to sign in again to make calls.'),
+        actions: [
+          TextButton(onPressed: Get.back, child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: V360Colors.danger500),
+            onPressed: () async {
+              await AuthRepo().logoutUser();
+              await AppCache.instance.clearAll();
+              Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
+            },
+            child: const Text('Log out'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(left: V360Spacing.s2),
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
+          ),
+        ),
+      );
+}
+
+class _NavRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  const _NavRow({required this.icon, required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: V360Spacing.s4,
+          vertical: V360Spacing.s4,
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: cs.primary, size: 20),
+            const SizedBox(width: V360Spacing.s3),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Sep extends StatelessWidget {
+  const _Sep();
+  @override
+  Widget build(BuildContext context) => Divider(
+        height: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+        indent: 56,
+      );
 }

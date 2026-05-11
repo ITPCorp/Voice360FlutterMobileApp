@@ -1,12 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/cache/cache_service.dart';
 import 'package:itp_voice/models/call_history_model.dart';
 import 'package:itp_voice/repo/call_history_repo.dart';
-import 'package:itp_voice/widgets/custom_loader.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
 
-int itemCount=0;
-int apiLimit=20;
+int itemCount = 0;
+int apiLimit = 20;
+
 class CallHistoryController extends GetxController {
   bool isLoading = false;
   CallHistoryRepo repo = CallHistoryRepo();
@@ -14,149 +15,119 @@ class CallHistoryController extends GetxController {
   List<CallHistory> todayCallHistory = [];
   List<CallHistory> yesterdayCallHistory = [];
   TextEditingController searchController = TextEditingController();
-  int apiOffset=0;
+  int apiOffset = 0;
+  bool _hydratedFromCache = false;
+  bool get hasCachedData => _hydratedFromCache;
 
   late ScrollController scrollController;
-  getCallHistory() async {
-    DateTime todayDate = DateTime.now();
-    isLoading = true;
 
+  void _hydrateFromCache() {
+    if (!AppCache.instance.isReady || _hydratedFromCache) return;
+    final cached = AppCache.instance.callHistory.readAll();
+    if (cached.isEmpty) return;
+    _bucketise(cached, replaceAll: true);
+    _hydratedFromCache = true;
     update();
-    final res = await repo.fetchCallHistory( offSet: apiOffset);
-    isLoading = false;
-    update();
-    if (res.runtimeType == String) {
-      CustomToast.showToast(res, true);
-      return;
+  }
+
+  /// Bucket the call list into Today / Yesterday / Earlier.
+  void _bucketise(List<CallHistory> calls, {required bool replaceAll}) {
+    if (replaceAll) {
+      todayCallHistory.clear();
+      yesterdayCallHistory.clear();
+      callHistoryList.clear();
     }
-    if (res.runtimeType == List<CallHistory>) {
-      apiOffset=apiOffset+apiLimit;
-      callHistoryList.addAll(res) ;
-
-      // for (int i = 0; i < callHistoryList.length; i++) {
-      //   if (callHistoryList[0].time!.day == todayDate.day) {
-      //     callHistoryList.add(callHistoryList[i]);
-      //   }
-      // }
-      for (int i = 0; i < callHistoryList.length; i++) {
-        if (callHistoryList[0].time!.day == todayDate.day) {
-          todayCallHistory.add(callHistoryList[i]);
-          callHistoryList.removeAt(i);
-        }
-        if (callHistoryList[0].time!.day ==
-            DateTime.now().subtract(const Duration(days: 1)).day) {
-          yesterdayCallHistory.add(callHistoryList[i]);
-          callHistoryList.removeAt(i);
-        }
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    for (final c in calls) {
+      final t = c.time;
+      if (t == null) {
+        callHistoryList.add(c);
+        continue;
       }
-      update();
+      final day = DateTime(t.year, t.month, t.day);
+      if (day == today) {
+        todayCallHistory.add(c);
+      } else if (day == yesterday) {
+        yesterdayCallHistory.add(c);
+      } else {
+        callHistoryList.add(c);
+      }
     }
   }
 
-  getDataList(String type, bool missedOnly) {
-    if (type == "today" && !missedOnly) {
-      if (searchController.text.isEmpty) {
-        return todayCallHistory;
-      }
-      if (searchController.text.isNotEmpty) {
-        return todayCallHistory
-            .where((element) =>
-                element.name!.toLowerCase() ==
-                searchController.text.toLowerCase())
-            .toList();
-      }
-    }
-    if (type == "today" && missedOnly) {
-      if (searchController.text.isEmpty) {
-        return todayCallHistory
-            .where((element) => element.isMissed! && element.isIncoming!)
-            .toList();
-      }
-      if (searchController.text.isNotEmpty) {
-        return todayCallHistory
-            .where((element) => element.isMissed! && element.isIncoming!)
-            .where((element) =>
-                element.name!.toLowerCase() ==
-                searchController.text.toLowerCase())
-            .toList();
-      }
-    }
+  Future<void> getCallHistory() async {
+    // Show shimmer only when the screen has nothing to render.
+    final hasAny = todayCallHistory.isNotEmpty ||
+        yesterdayCallHistory.isNotEmpty ||
+        callHistoryList.isNotEmpty;
+    isLoading = !hasAny;
+    update();
 
-    if (type == "yesterday" && !missedOnly) {
-      if (searchController.text.isEmpty) {
-        return yesterdayCallHistory;
-      }
-      if (searchController.text.isNotEmpty) {
-        return yesterdayCallHistory
-            .where(
-              (element) => element.name!
-                  .toLowerCase()
-                  .contains(searchController.text.toLowerCase()),
-            )
-            .toList();
-      }
-    }
-    if (type == "yesterday" && missedOnly) {
-      if (searchController.text.isEmpty) {
-        return yesterdayCallHistory
-            .where((element) => element.isMissed! && element.isIncoming!)
-            .toList();
-      }
-      if (searchController.text.isNotEmpty) {
-        return yesterdayCallHistory
-            .where((element) => element.isMissed! && element.isIncoming!)
-            .where(
-              (element) => element.name!
-                  .toLowerCase()
-                  .contains(searchController.text.toLowerCase()),
-            )
-            .toList();
-      }
-    }
+    final res = await repo.fetchCallHistory(offSet: apiOffset);
+    isLoading = false;
 
-    if (type == "earlier" && !missedOnly) {
-      if (searchController.text.isEmpty) {
-        return callHistoryList;
-      }
-      if (searchController.text.isNotEmpty) {
-        return callHistoryList
-            .where(
-              (element) => element.name!
-                  .toLowerCase()
-                  .contains(searchController.text.toLowerCase()),
-            )
-            .toList();
+    if (res is String) {
+      CustomToast.showToast(res, true);
+      update();
+      return;
+    }
+    if (res is List<CallHistory>) {
+      apiOffset = apiOffset + apiLimit;
+      if (apiOffset <= apiLimit) {
+        // First page: swap fresh data in.
+        _bucketise(res, replaceAll: true);
+        if (AppCache.instance.isReady) {
+          AppCache.instance.callHistory.writeAll(res);
+        }
+      } else {
+        // Append for pagination.
+        _bucketise(res, replaceAll: false);
+        if (AppCache.instance.isReady) {
+          final combined = [
+            ...todayCallHistory,
+            ...yesterdayCallHistory,
+            ...callHistoryList,
+          ];
+          AppCache.instance.callHistory.writeAll(combined);
+        }
       }
     }
-    if (type == "earlier" && missedOnly) {
-      if (searchController.text.isEmpty) {
-        return callHistoryList
-            .where((element) => element.isMissed! && element.isIncoming!)
-            .toList();
-      }
-      if (searchController.text.isNotEmpty) {
-        return callHistoryList
-            .where((element) => element.isMissed! && element.isIncoming!)
-            .where(
-              (element) => element.name!
-                  .toLowerCase()
-                  .contains(searchController.text.toLowerCase()),
-            )
-            .toList();
-      }
+    update();
+  }
+
+  dynamic getDataList(String type, bool missedOnly) {
+    final src = switch (type) {
+      'today' => todayCallHistory,
+      'yesterday' => yesterdayCallHistory,
+      _ => callHistoryList,
+    };
+    Iterable<CallHistory> filtered = src;
+    if (missedOnly) {
+      filtered = filtered
+          .where((c) => (c.isMissed ?? false) && (c.isIncoming ?? false));
     }
+    final q = searchController.text.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      filtered = filtered.where((c) =>
+          (c.name ?? '').toLowerCase().contains(q));
+    }
+    return filtered.toList();
   }
 
   @override
   void onInit() {
-    // TODO: implement onInit
     super.onInit();
     scrollController = ScrollController();
     scrollController.addListener(() {
-      if (scrollController.position.pixels == scrollController.position.maxScrollExtent && apiLimit==itemCount) {
+      if (scrollController.position.pixels ==
+              scrollController.position.maxScrollExtent &&
+          apiLimit == itemCount) {
         getCallHistory();
       }
     });
+    _hydrateFromCache();
     getCallHistory();
   }
 }

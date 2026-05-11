@@ -1,555 +1,329 @@
-import 'package:floating_bottom_bar/animated_bottom_navigation_bar.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/src/foundation/key.dart';
-import 'package:flutter/src/widgets/framework.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:get/get.dart';
-import 'package:itp_voice/app_theme.dart';
 import 'package:itp_voice/controllers/messages_controller.dart';
+import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart';
-import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
-import 'package:itp_voice/storage_keys.dart';
-import 'package:itp_voice/widgets/search_textfield.dart';
-import 'package:timezone/timezone.dart';
+import 'package:itp_voice/services/contact_resolver.dart';
 
-List avatarImages = [
-  "https://i.imgur.com/Fur0AUt.png",
-  "https://i.imgur.com/kL7WMgG.png",
-  "https://i.imgur.com/Bwf87Tv.png",
-  "https://i.imgur.com/Fur0AUt.png",
-  "https://i.imgur.com/kL7WMgG.png",
-  "https://i.imgur.com/Bwf87Tv.png",
-  "https://i.imgur.com/Fur0AUt.png",
-  "https://i.imgur.com/kL7WMgG.png",
-  "https://i.imgur.com/Bwf87Tv.png",
-  "https://i.imgur.com/Fur0AUt.png",
-  "https://i.imgur.com/kL7WMgG.png",
-  "https://i.imgur.com/Bwf87Tv.png",
-];
+class MessagesScreen extends StatefulWidget {
+  const MessagesScreen({super.key});
 
-class MessagesScreen extends StatelessWidget {
-  MessagesScreen({Key? key}) : super(key: key);
+  @override
+  State<MessagesScreen> createState() => _MessagesScreenState();
+}
 
-  MessagesController con = Get.put(MessagesController());
+class _MessagesScreenState extends State<MessagesScreen> {
+  final MessagesController con = Get.put(MessagesController());
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    // Trigger when the user is within ~300px of the bottom — feels smoother
+    // than waiting until they hit the floor.
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    if (position.pixels >= position.maxScrollExtent - 300 &&
+        con.hasMore &&
+        !con.isLoadingMore.value &&
+        !con.isloading.value &&
+        con.searchController.text.trim().isEmpty) {
+      con.loadMoreThreads();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Obx(
-      () => con.isloading.value == true
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
-          : DefaultTabController(
-              length: 2,
-              child: Scaffold(
-                floatingActionButton: SizedBox(
-                  height: 50.h,
-                  width: 50.h,
-                  child: FloatingActionButton(
-                    onPressed: () {
-                      con.sendNewMessage(context);
-                    },
-                    child: Container(
-                      height: 50.h,
-                      width: 50.h,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [
-                          Theme.of(context).colorScheme.primary.withOpacity(0.7),
-                          Theme.of(context).colorScheme.primary,
-                        ]),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Icon(
-                        Icons.add,
-                        color: Colors.white,
-                      ),
-                    ),
-                    backgroundColor: Colors.transparent,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.all(
-                        Radius.circular(6),
-                      ),
-                    ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Messages'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit_square),
+            tooltip: 'New message',
+            onPressed: () => con.sendNewMessage(context),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          _buildNumberSelector(context),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              V360Spacing.s4,
+              V360Spacing.s2,
+              V360Spacing.s4,
+              V360Spacing.s3,
+            ),
+            child: V360SearchField(
+              controller: con.searchController,
+              hintText: 'Search conversations',
+              onChanged: (_) => con.filterThreads(),
+              onClear: () {
+                con.searchController.clear();
+                con.filterThreads();
+              },
+            ),
+          ),
+          Expanded(
+            child: Obx(() {
+              if (con.isloading.value && con.threads.isEmpty) {
+                return const _ThreadsLoading();
+              }
+              if (con.threads.isEmpty) {
+                return V360EmptyState(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  title: 'No conversations',
+                  message: 'Tap the pencil icon to start a new message.',
+                  action: V360Button(
+                    label: 'New message',
+                    leadingIcon: Icons.edit_square,
+                    onPressed: () => con.sendNewMessage(context),
                   ),
+                );
+              }
+              final isSearching =
+                  con.searchController.text.trim().isNotEmpty;
+              // Only show the footer loader/spacer while showing the full
+              // list (not filtered search results) and there's actually more
+              // data to load.
+              final showFooter = !isSearching && con.hasMore;
+              final itemCount =
+                  con.threads.length + (showFooter ? 1 : 0);
+              return RefreshIndicator(
+                onRefresh: () async => con.loadThreads(),
+                child: ListView.separated(
+                  controller: _scroll,
+                  padding: const EdgeInsets.only(bottom: V360Spacing.s10),
+                  itemCount: itemCount,
+                  separatorBuilder: (_, i) {
+                    // No divider above the footer slot.
+                    if (showFooter && i == con.threads.length - 1) {
+                      return const SizedBox.shrink();
+                    }
+                    return Divider(
+                      height: 1,
+                      color: Theme.of(context).colorScheme.outlineVariant,
+                      indent: 76,
+                    );
+                  },
+                  itemBuilder: (_, i) {
+                    if (showFooter && i == con.threads.length) {
+                      return const _LoadMoreFooter();
+                    }
+                    return _threadRow(con.threads[i]);
+                  },
                 ),
-                appBar: AppBar(
-                  elevation: 0,
-                  backgroundColor: Colors.transparent,
-                  centerTitle: true,
-                  title: Container(
-                    padding: EdgeInsets.only(top: 10.h),
-                    child: Text(
-                      "Chats",
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.secondary,
-                        fontSize: 20.sp,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                body: Column(
-                  children: [
-                    Divider(
-                      height: 0,
-                    ),
-                    SizedBox(
-                      height: 15.h,
-                    ),
-                    Searchbar(
-                      controller: con.searchController,
-                      onChanged: (text) {
-                        con.filterThreads();
-                      },
-                    ),
-                    SizedBox(
-                      height: 10.h,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 5,
-                          ),
-                          Text(
-                            "My Number",
-                            style: TextStyle(fontSize: 17),
-                          ),
-                          Spacer(),
-                          DropdownButton<String>(
-                            value: con.selectedNumber,
-                            hint: const Text('-'),
-                            items: List.generate(
-                              con.numbers.length,
-                              (index) => DropdownMenuItem(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(5.0),
-                                  child: Text(
-                                    con.numbers[index],
-                                  ),
-                                ),
-                                value: con.numbers[index],
-                              ),
-                            ),
-                            onChanged: (text) {
-                              con.selectedNumber = text;
-                              con.loadThreads();
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    TabBar(
-                      tabs: [
-                        Tab(
-                          text: 'All',
-                        ),
-                        Tab(
-                          text: 'Unread',
-                        )
-                      ],
-                      labelStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-                      labelColor: Theme.of(context).colorScheme.primary,
-                      unselectedLabelColor: Theme.of(context).colorScheme.tertiary,
-                      indicatorColor: Theme.of(context).colorScheme.primary,
-                    ),
-                    Expanded(
-                      child: TabBarView(
-                        children: [
-                          ListView.separated(
-                              primary: false,
-                              padding: const EdgeInsets.only(bottom: 10, top: 10),
-                              separatorBuilder: (context, index) {
-                                return Divider();
-                              },
-                              shrinkWrap: true,
-                              itemCount: con.threads.length,
-                              itemBuilder: (context, index) {
-                                print(con.threads.length);
-                                String? _timeZone = SharedPreferencesMethod.getString(StorageKeys.TIME_ZONE);
-                                final zone = getLocation(_timeZone ?? '');
-                                final time = TZDateTime.from(DateTime.parse(con.threads[index].lastUpdated!), zone);
-                                return con.threads[index].participants!
-                                        .where((element) => element.isSelf != true)
-                                        .toList()
-                                        .isEmpty
-                                    ? const SizedBox.shrink()
-                                    : GestureDetector(
-                                        onTap: () async {
-                                          await Get.toNamed(Routes.CHAT_SCREEN_ROUTE, arguments: [
-                                            con.threads[index].participants![0].messageThreadId,
-                                            con.selectedNumber,
-                                            con.threads[index].participants
-                                                ?.firstWhere((participant) => participant.isSelf == false)
-                                                .number,
-                                          ]);
-                                          con.onInit();
-                                        },
-                                        child: Container(
-                                          margin: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                                          alignment: Alignment.center,
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Row(
-                                                mainAxisSize: MainAxisSize.max,
-                                                children: [
-                                                  Stack(
-                                                    clipBehavior: Clip.none,
-                                                    children: [
-                                                      Container(
-                                                        padding: EdgeInsets.all(2.h),
-                                                        alignment: Alignment.topCenter,
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.grey,
-                                                          boxShadow: [
-                                                            BoxShadow(
-                                                              color: Colors.black.withOpacity(0.1),
-                                                              spreadRadius: 2,
-                                                              blurRadius: 4,
-                                                              offset: Offset(0, 3), // changes position of shadow
-                                                            ),
-                                                          ],
-                                                          shape: BoxShape.circle,
-                                                        ),
-                                                        child: Container(
-                                                          height: 50.h,
-                                                          width: 50.w,
-                                                          decoration: BoxDecoration(
-                                                            borderRadius: BorderRadius.all(
-                                                              Radius.circular(
-                                                                6,
-                                                              ),
-                                                            ),
-                                                            // image: DecorationImage(
-                                                            //   image: AssetImage('assets/images/profile.png'),
-                                                            //   fit: BoxFit.cover,
-                                                            // ),
-                                                          ),
-                                                          child: Icon(
-                                                            Icons.person,
-                                                            size: 30,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      // index == 0
-                                                      //     ? Positioned(
-                                                      //         bottom: 0,
-                                                      //         right: 0,
-                                                      //         child: Container(
-                                                      //           padding: EdgeInsets.all(4.h),
-                                                      //           decoration: BoxDecoration(
-                                                      //             border: Border.all(color: Colors.white),
-                                                      //             shape: BoxShape.circle,
-                                                      //             color: Theme.of(context).colorScheme.primary,
-                                                      //           ),
-                                                      //           child: Text(
-                                                      //             "5",
-                                                      //             style: TextStyle(color: Colors.white, fontSize: 12.h),
-                                                      //           ),
-                                                      //         ),
-                                                      //       )
-                                                      //     : Container()
-                                                    ],
-                                                  ),
-                                                  SizedBox(width: 15.w),
-                                                  Container(
-                                                      alignment: Alignment.centerLeft,
-                                                      child: Column(
-                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                        children: [
-                                                          Row(
-                                                            children: [
-                                                              Text(
-                                                                con.threads[index].participants!
-                                                                    .where((element) => element.isSelf != true)
-                                                                    .toList()[0]
-                                                                    .number!, //"Mathew Murdock",
-                                                                // style: ts(1, 0xff1B1A57, 14.sp, 5),
-                                                                style: TextStyle(
-                                                                  fontWeight: con.threads[index].threadRead == false
-                                                                      ? FontWeight.w600
-                                                                      : FontWeight.w400,
-                                                                  fontSize: 15.sp,
-                                                                ),
-                                                              ),
-                                                              SizedBox(
-                                                                width: 5.w,
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          SizedBox(height: 3.h),
-                                                          Container(
-                                                            width: 215.w,
-                                                            child: Text(
-                                                              con.threads[index].lastMessage ?? 'Empty chat',
-                                                              // style: ts(1, 0xff4F5E7B, 12.sp, 4),
-                                                              style: TextStyle(
-                                                                  fontSize: 13.sp,
-                                                                  color: Theme.of(context).colorScheme.tertiary),
-                                                              maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ))
-                                                ],
-                                              ),
-                                              Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Container(
-                                                    alignment: Alignment.topCenter,
-                                                    child: Text(
-                                                      time.hour.toString().padLeft(2, "0") +
-                                                          ':' +
-                                                          time.minute.toString().padLeft(2, "0"),
-                                                      style: TextStyle(
-                                                              fontSize: 13.sp,
-                                                              color: Theme.of(context).colorScheme.tertiary)
-                                                          .copyWith(
-                                                              fontWeight: con.threads[index].threadRead == false
-                                                                  ? FontWeight.w600
-                                                                  : FontWeight.normal),
-                                                      // ((index == 0 || index == 1 || index == 2)
-                                                      //         ? "${DateFormat('hh:mm').format(DateTime.now())}"
-                                                      //         : (index == 3 || index == 4)
-                                                      //             ? "Yesterday"
-                                                      //             : (index == 5)
-                                                      //                 ? "2 days ago"
-                                                      //                 : "Sat 9 March") +
-                                                      //     "",
-                                                    ),
-                                                  ),
-                                                  Opacity(
-                                                    opacity: con.threads[index].unreadMessages! > 0 ? 1 : 0,
-                                                    child: Container(
-                                                      width: 20,
-                                                      height: 20,
-                                                      alignment: Alignment.center,
-                                                      margin: const EdgeInsets.only(top: 5),
-                                                      decoration: BoxDecoration(
-                                                        color: con.threads[index].unreadMessages! > 0
-                                                            ? Theme.of(context).colorScheme.primary
-                                                            : Colors.transparent,
-                                                        shape: BoxShape.circle,
-                                                      ),
-                                                      child: Text(
-                                                        con.threads[index].unreadMessages! > 99
-                                                            ? '99'
-                                                            : con.threads[index].unreadMessages!.toString(),
-                                                        style: TextStyle(fontSize: 13.sp, color: AppColors.white),
-                                                      ),
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                              }),
-                          ListView.separated(
-                              primary: false,
-                              padding: const EdgeInsets.only(bottom: 10, top: 10),
-                              separatorBuilder: (context, index) {
-                                return Divider();
-                              },
-                              shrinkWrap: true,
-                              itemCount: con.threads.where((element) => element.threadRead == false).toList().length,
-                              itemBuilder: (context, index) {
-                                String? _timeZone = SharedPreferencesMethod.getString(StorageKeys.TIME_ZONE);
-                                final zone = getLocation(_timeZone ?? '');
-                                MessageThreads item =
-                                    con.threads.where((element) => element.threadRead == false).toList()[index];
-                                final time = TZDateTime.from(DateTime.parse(item.lastUpdated!), zone);
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
 
-                                return item.participants!.where((element) => element.isSelf != true).toList().isEmpty
-                                    ? const SizedBox.shrink()
-                                    : GestureDetector(
-                                        onTap: () {
-                                          Get.toNamed(Routes.CHAT_SCREEN_ROUTE, arguments: [
-                                            item.participants![0].messageThreadId,
-                                            con.selectedNumber,
-                                            item.participants
-                                                ?.firstWhere((participant) => participant.isSelf == false)
-                                                .number,
-                                          ]);
-                                        },
-                                        child: Container(
-                                          margin: EdgeInsets.symmetric(horizontal: 10.w, vertical: 5.h),
-                                          alignment: Alignment.center,
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Row(
-                                                mainAxisSize: MainAxisSize.max,
-                                                children: [
-                                                  Stack(
-                                                    clipBehavior: Clip.none,
-                                                    children: [
-                                                      Container(
-                                                        padding: EdgeInsets.all(2.h),
-                                                        alignment: Alignment.topCenter,
-                                                        decoration: BoxDecoration(
-                                                          color: Colors.grey,
-                                                          boxShadow: [
-                                                            BoxShadow(
-                                                              color: Colors.black.withOpacity(0.1),
-                                                              spreadRadius: 2,
-                                                              blurRadius: 4,
-                                                              offset: Offset(0, 3), // changes position of shadow
-                                                            ),
-                                                          ],
-                                                          shape: BoxShape.circle,
-                                                        ),
-                                                        child: Container(
-                                                          height: 50.h,
-                                                          width: 50.w,
-                                                          decoration: BoxDecoration(
-                                                            borderRadius: BorderRadius.all(
-                                                              Radius.circular(
-                                                                6,
-                                                              ),
-                                                            ),
-                                                            // image: DecorationImage(
-                                                            //   image: AssetImage('assets/images/profile.png'),
-                                                            //   fit: BoxFit.cover,
-                                                            // ),
-                                                          ),
-                                                          child: Icon(
-                                                            Icons.person,
-                                                            size: 30,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      // index == 0
-                                                      //     ? Positioned(
-                                                      //         bottom: 0,
-                                                      //         right: 0,
-                                                      //         child: Container(
-                                                      //           padding: EdgeInsets.all(4.h),
-                                                      //           decoration: BoxDecoration(
-                                                      //             border: Border.all(color: Colors.white),
-                                                      //             shape: BoxShape.circle,
-                                                      //             color: Theme.of(context).colorScheme.primary,
-                                                      //           ),
-                                                      //           child: Text(
-                                                      //             "5",
-                                                      //             style: TextStyle(color: Colors.white, fontSize: 12.h),
-                                                      //           ),
-                                                      //         ),
-                                                      //       )
-                                                      //     : Container()
-                                                    ],
-                                                  ),
-                                                  SizedBox(width: 15.w),
-                                                  Container(
-                                                      alignment: Alignment.centerLeft,
-                                                      child: Column(
-                                                        mainAxisAlignment: MainAxisAlignment.center,
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                                        children: [
-                                                          Row(
-                                                            children: [
-                                                              Text(
-                                                                item.participants!
-                                                                    .where((element) => element.isSelf != true)
-                                                                    .toList()[0]
-                                                                    .number!, //"Mathew Murdock",
-                                                                // style: ts(1, 0xff1B1A57, 14.sp, 5),
-                                                                style: TextStyle(
-                                                                  fontWeight: item.threadRead == false
-                                                                      ? FontWeight.w600
-                                                                      : FontWeight.w400,
-                                                                  fontSize: 15.sp,
-                                                                ),
-                                                              ),
-                                                              SizedBox(
-                                                                width: 5.w,
-                                                              ),
-                                                            ],
-                                                          ),
-                                                          SizedBox(height: 3.h),
-                                                          Container(
-                                                            width: 215.w,
-                                                            child: Text(
-                                                              item.lastMessage ?? 'Empty chat',
-                                                              // style: ts(1, 0xff4F5E7B, 12.sp, 4),
-                                                              style: TextStyle(
-                                                                  fontSize: 13.sp,
-                                                                  color: Theme.of(context).colorScheme.tertiary),
-                                                              maxLines: 2,
-                                                              overflow: TextOverflow.ellipsis,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ))
-                                                ],
-                                              ),
-                                              Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  Container(
-                                                    alignment: Alignment.topCenter,
-                                                    child: Text(
-                                                      time.hour.toString().padLeft(2, "0") +
-                                                          ':' +
-                                                          time.minute.toString().padLeft(2, "0"),
-                                                      style: TextStyle(
-                                                              fontSize: 13.sp,
-                                                              color: Theme.of(context).colorScheme.tertiary)
-                                                          .copyWith(
-                                                              color: item.threadRead == false
-                                                                  ? AppTheme.colors(context)?.textColor
-                                                                  : Color(0xFF6B6F80)),
-                                                      // ((index == 0 || index == 1 || index == 2)
-                                                      //         ? "${DateFormat('hh:mm').format(DateTime.now())}"
-                                                      //         : (index == 3 || index == 4)
-                                                      //             ? "Yesterday"
-                                                      //             : (index == 5)
-                                                      //                 ? "2 days ago"
-                                                      //                 : "Sat 9 March") +
-                                                      //     "",
-                                                    ),
-                                                  ),
-                                                  Opacity(
-                                                    opacity: item.unreadMessages! > 0 ? 1 : 0,
-                                                    child: Container(
-                                                      width: 20,
-                                                      height: 20,
-                                                      alignment: Alignment.center,
-                                                      margin: const EdgeInsets.only(top: 5),
-                                                      decoration: BoxDecoration(
-                                                        color: item.unreadMessages! > 0
-                                                            ? Theme.of(context).colorScheme.primary
-                                                            : Colors.transparent,
-                                                        shape: BoxShape.circle,
-                                                      ),
-                                                      child: Text(
-                                                        item.unreadMessages! > 99
-                                                            ? '99'
-                                                            : item.unreadMessages!.toString(),
-                                                        style: TextStyle(fontSize: 13.sp, color: AppColors.white),
-                                                      ),
-                                                    ),
-                                                  )
-                                                ],
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                              }),
-                        ],
-                      ),
-                    ),
+  Widget _buildNumberSelector(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Obx(() {
+      if (con.numbers.isEmpty) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(
+          V360Spacing.s4,
+          V360Spacing.s3,
+          V360Spacing.s4,
+          0,
+        ),
+        child: V360Card(
+          padding: const EdgeInsets.symmetric(
+            horizontal: V360Spacing.s3,
+            vertical: V360Spacing.s2,
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.swap_horiz_rounded, color: cs.primary, size: 20),
+              const SizedBox(width: V360Spacing.s2),
+              Text(
+                'From',
+                style: tt.labelMedium?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(width: V360Spacing.s2),
+              Expanded(
+                child: DropdownButton<String>(
+                  value: con.selectedNumber,
+                  isDense: true,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  items: [
+                    for (final n in con.numbers)
+                      DropdownMenuItem(value: n, child: Text(n)),
                   ],
+                  onChanged: (v) {
+                    con.selectedNumber = v;
+                    con.loadThreads();
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _threadRow(MessageThreads t) {
+    final other = t.participants
+        ?.firstWhere((p) => p.isSelf != true,
+            orElse: () => t.participants!.first)
+        .number;
+    final displayName = ContactResolver.resolveThreadDisplay(t);
+    // When the display is a real name we show the phone number as the
+    // sub-label of the row's title row; otherwise we just show the last
+    // message (existing behaviour).
+    final showSecondaryPhone =
+        displayName != (other ?? 'Unknown') && (other ?? '').isNotEmpty;
+    final unread = (t.unreadMessages ?? 0) > 0;
+    return V360ListTile(
+      leading: V360Avatar(name: displayName, size: 48),
+      title: displayName,
+      subtitle: showSecondaryPhone
+          ? '${other!} · ${t.lastMessage ?? ''}'
+          : (t.lastMessage ?? ''),
+      titleStyle: TextStyle(
+        fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
+      ),
+      subtitleMaxLines: 1,
+      trailing: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            _formatRelative(t.lastUpdated),
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: unread
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+                ),
+          ),
+          const SizedBox(height: 4),
+          if (unread)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 6,
+                vertical: 1,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary,
+                borderRadius: BorderRadius.circular(V360Radius.full),
+              ),
+              child: Text(
+                t.unreadMessages.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
+        ],
+      ),
+      onTap: () {
+        // Pass the full MessageThreads object as a 4th arg so the chat
+        // screen can render the contact name immediately, before the
+        // thread-messages fetch returns (and even when offline).
+        Get.toNamed(
+          Routes.CHAT_SCREEN_ROUTE,
+          arguments: [t.pk, con.selectedNumber, other, t],
+        );
+      },
     );
+  }
+
+  String _formatRelative(String? iso) {
+    if (iso == null) return '';
+    final t = DateTime.tryParse(iso)?.toLocal();
+    if (t == null) return '';
+    final now = DateTime.now();
+    final diff = now.difference(t);
+    if (diff.inMinutes < 1) return 'now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    final hh = t.hour > 12 ? t.hour - 12 : (t.hour == 0 ? 12 : t.hour);
+    final mm = t.minute.toString().padLeft(2, '0');
+    return '${t.month}/${t.day} $hh:$mm';
+  }
+}
+
+class _ThreadsLoading extends StatelessWidget {
+  const _ThreadsLoading();
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: 8,
+      padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
+      itemBuilder: (_, __) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: V360Spacing.s3),
+        child: Row(
+          children: [
+            V360Skeleton.circle(size: 48),
+            const SizedBox(width: V360Spacing.s3),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  V360Skeleton.line(width: 140, height: 14),
+                  const SizedBox(height: 6),
+                  V360Skeleton.line(width: 220, height: 12),
+                ],
+              ),
+            ),
+            V360Skeleton.line(width: 36, height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Footer row shown at the bottom of the thread list while older pages are
+/// being fetched, or as a thin separator when an idle "load more" is queued.
+class _LoadMoreFooter extends StatelessWidget {
+  const _LoadMoreFooter();
+
+  @override
+  Widget build(BuildContext context) {
+    final con = Get.find<MessagesController>();
+    return Obx(() {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: V360Spacing.s5),
+        child: Center(
+          child: con.isLoadingMore.value
+              ? SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    valueColor: AlwaysStoppedAnimation(
+                        Theme.of(context).colorScheme.primary),
+                  ),
+                )
+              : const SizedBox(height: 22),
+        ),
+      );
+    });
   }
 }

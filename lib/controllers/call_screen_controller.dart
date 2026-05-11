@@ -108,7 +108,7 @@ class CallScreenController extends GetxController
     if (callState.state == CallStateEnum.HOLD ||
         callState.state == CallStateEnum.UNHOLD) {
       hold.value = callState.state == CallStateEnum.HOLD;
-      holdOriginator!.value = callState.originator!;
+      holdOriginator!.value = callState.originator?.toString() ?? '';
       // this.setState(() {});
       return;
     }
