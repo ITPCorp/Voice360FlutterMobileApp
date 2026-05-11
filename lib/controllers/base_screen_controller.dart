@@ -75,9 +75,27 @@ class BaseScreenController extends GetxController
 
   loadSettings() {
     String? _realm = SharedPreferencesMethod.getString(StorageKeys.REALM);
-    Devices device = SharedPreferencesMethod.getDeviceData()!;
-    String? _username = device.sipUsername;
-    String? _password = device.sipPassword;
+    final device = SharedPreferencesMethod.getDeviceData();
+    // Missing/invalid persisted state — typically an in-place upgrade from
+    // a version that never wrote these keys, or a half-finished prior
+    // login. Don't crash: bail to login so the user re-authenticates and
+    // the prefs are rewritten with the current shape.
+    if (device == null ||
+        _realm == null ||
+        _realm.isEmpty ||
+        device.sipUsername == null ||
+        device.sipPassword == null) {
+      print('SIP loadSettings: missing/invalid persisted device — '
+          'routing to login');
+      // Clear the auth token so the login screen actually shows its form
+      // (otherwise auto-login would loop us right back here on next launch).
+      SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+      SharedPreferencesMethod.storage.remove(StorageKeys.ACCESS_TOKEN);
+      Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
+      return;
+    }
+    final _username = device.sipUsername;
+    final _password = device.sipPassword;
 
     UaSettings settings = UaSettings();
 

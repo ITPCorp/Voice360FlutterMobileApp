@@ -522,8 +522,9 @@ class BaseRequester {
   }
 
   Future updateToken() async {
-    final String _token = SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN)!;
-    token = _token;
+    final _token =
+        SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
+    token = _token ?? '';
   }
 }
 

@@ -58,13 +58,28 @@ class AppCache {
   Future<void> init() async {
     if (_initialised) return;
     await Hive.initFlutter();
-    _contactsBox = await Hive.openBox(_kBoxContacts);
-    _threadsBox = await Hive.openBox(_kBoxThreads);
-    _messagesBox = await Hive.openBox(_kBoxMessages);
-    _callHistoryBox = await Hive.openBox(_kBoxCallHistory);
-    _voicemailsBox = await Hive.openBox(_kBoxVoicemails);
-    _metaBox = await Hive.openBox(_kBoxMeta);
+    // Each box opens independently. If one is corrupted (eg. from a prior
+    // version with a schema mismatch), we delete-and-reopen it instead of
+    // letting the exception take down every other cache and crash the app.
+    _contactsBox = await _safeOpenBox(_kBoxContacts);
+    _threadsBox = await _safeOpenBox(_kBoxThreads);
+    _messagesBox = await _safeOpenBox(_kBoxMessages);
+    _callHistoryBox = await _safeOpenBox(_kBoxCallHistory);
+    _voicemailsBox = await _safeOpenBox(_kBoxVoicemails);
+    _metaBox = await _safeOpenBox(_kBoxMeta);
     _initialised = true;
+  }
+
+  Future<Box> _safeOpenBox(String name) async {
+    try {
+      return await Hive.openBox(name);
+    } catch (e) {
+      if (kDebugMode) print('Hive box "$name" corrupt, recreating: $e');
+      try {
+        await Hive.deleteBoxFromDisk(name);
+      } catch (_) {/* best effort */}
+      return await Hive.openBox(name);
+    }
   }
 
   bool get isReady => _initialised;

@@ -285,8 +285,11 @@ class AuthRepo {
   }
 
   reLoginUser() async {
-    String email = SharedPreferencesMethod.getString(StorageKeys.EMAIL)!;
-    String password = SharedPreferencesMethod.getString(StorageKeys.PASSWORD)!;
+    final email = SharedPreferencesMethod.getString(StorageKeys.EMAIL);
+    final password = SharedPreferencesMethod.getString(StorageKeys.PASSWORD);
+    if (email == null || password == null) {
+      return 'Please sign in again.';
+    }
     LoginRequestModel body = LoginRequestModel(username: email, password: password);
     final apiResponse =
         await BaseRequesterMethods.baseRequester.basePostAPI(Endpoints.LOGIN_URL, body.toJson(), protected: false);

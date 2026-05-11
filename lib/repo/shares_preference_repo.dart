@@ -35,22 +35,29 @@ class SharedPreferencesMethod {
     return data;
   }
 
+  /// Returns null when the key is missing OR the persisted JSON can't be
+  /// parsed into the current model. Crucially: NEVER throws — startup code
+  /// gates on a null return and routes to login instead. The previous
+  /// `getString(...)!` form threw `Null check operator used on a null value`
+  /// during in-place upgrades from versions that hadn't written this key
+  /// yet, causing the app to crash on launch until the user uninstalled.
   static AppUser? getUserData() {
-    String? keyValue = getString(StorageKeys.APPUSER_DATA)!;
+    final keyValue = getString(StorageKeys.APPUSER_DATA);
+    if (keyValue == null || keyValue.isEmpty) return null;
     try {
-      AppUser user = AppUser.fromJson(keyValue);
-      return user;
-    } catch (e) {
+      return AppUser.fromJson(keyValue);
+    } catch (_) {
       return null;
     }
   }
 
+  /// See [getUserData] — same null-safe + tolerant contract.
   static Devices? getDeviceData() {
-    String? keyValue = getString(StorageKeys.DEVICE)!;
+    final keyValue = getString(StorageKeys.DEVICE);
+    if (keyValue == null || keyValue.isEmpty) return null;
     try {
-      Devices device = Devices.fromJson(keyValue);
-      return device;
-    } catch (e) {
+      return Devices.fromJson(keyValue);
+    } catch (_) {
       return null;
     }
   }
