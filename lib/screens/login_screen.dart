@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/login_controller.dart';
 import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/notification_service.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
@@ -39,6 +40,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _wirePushHandlers() {
+    // Without Firebase initialized (iOS pre-GoogleService-Info.plist), every
+    // FirebaseMessaging touch throws `[core/no-app]`. No-op out cleanly.
+    if (!firebaseReady) return;
     FirebaseMessaging.instance.getInitialMessage().then((message) async {
       if (message?.data == null) return;
       final data = message!.data;

@@ -1,11 +1,2 @@
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
 #include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
->>>>>>> cb6bf7b (added support for android 14)
->>>>>>> 24b9f78d (Added support for android 14)
->>>>>>> b1482309 (added ios file)
 #include "Generated.xcconfig"

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/models/get_devices_reponse_model/get_devices_reponse_model.dart';
 import 'package:itp_voice/models/login_reponse_model/login_reponse_model.dart';
@@ -131,9 +132,15 @@ class AuthRepo {
   loginUser(String email, String password, bool rememberMe) async {
     LoginRequestModel body = LoginRequestModel(username: email, password: password);
     Map loginBody = body.toMap();
-    await FirebaseMessaging.instance.deleteToken();
-    loginBody['mobile_device_id'] = await FirebaseMessaging.instance.getToken();
-    print('DEVICE TOKEN: ' + loginBody['mobile_device_id'].toString());
+    if (firebaseReady) {
+      try {
+        await FirebaseMessaging.instance.deleteToken();
+        loginBody['mobile_device_id'] = await FirebaseMessaging.instance.getToken();
+      } catch (e) {
+        print('Firebase token fetch failed: $e');
+      }
+    }
+    print('DEVICE TOKEN: ' + (loginBody['mobile_device_id']?.toString() ?? 'null'));
     final apiResponse = await BaseRequesterMethods.baseRequester
         .basePostAPI(Endpoints.LOGIN_URL, jsonEncode(loginBody), protected: false);
     print("--------api response---------");
@@ -321,7 +328,13 @@ class AuthRepo {
     await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
     await SharedPreferencesMethod.storage.remove(StorageKeys.APPUSER_DATA);
     await SharedPreferencesMethod.storage.remove(StorageKeys.TIME_ZONE);
-    await FirebaseMessaging.instance.deleteToken();
+    if (firebaseReady) {
+      try {
+        await FirebaseMessaging.instance.deleteToken();
+      } catch (e) {
+        print('Firebase deleteToken failed: $e');
+      }
+    }
     try {
       await BaseRequesterMethods.baseRequester.baseGetAPI(Endpoints.LOGOUT_URL);
     } catch (e) {

@@ -40,8 +40,8 @@ dependencies:
   hive_flutter: ^1.1.0
   
   flutter_screenutil: ^5.9.3
-  firebase_messaging: ^15.0.4
-  firebase_core: ^3.3.0
+  firebase_messaging: ^16.2.0
+  firebase_core: ^4.0.0
   # cloud_firestore: ^3.1.5
   audio_service: ^0.18.15
   sip_ua: ^1.1.0
@@ -70,8 +70,8 @@ dependencies:
   bubble: ^1.2.1
   photo_view: ^0.15.0
   lottie: ^3.1.2
-  cloud_firestore: ^5.3.0
-  firebase_auth: ^5.2.0
+  cloud_firestore: ^6.3.0
+  firebase_auth: ^6.4.0
   just_audio: ^0.9.40
   url_launcher: ^6.3.0
   # Pin the Android implementation: 6.3.15+ pulls androidx.browser 1.9.0,

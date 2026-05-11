@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/routes.dart';
 
 class LocalNotificationService {
@@ -12,7 +13,11 @@ class LocalNotificationService {
   static Future<void> initialize() async {
     const InitializationSettings initializationSettings = InitializationSettings(
       android: AndroidInitializationSettings("@mipmap/ic_launcher"),
-      // iOS: IOSInitializationSettings(),  // Uncomment if targeting iOS
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
     );
 
     await _notificationsPlugin.initialize(
@@ -20,11 +25,13 @@ class LocalNotificationService {
       onDidReceiveBackgroundNotificationResponse: _onDidReceiveBackgroundNotificationResponse,
     );
 
-    try {
-      final token = await FirebaseMessaging.instance.getToken();
-      print("Firebase Token: $token");
-    } catch (e) {
-      print("Error getting Firebase token: $e");
+    if (firebaseReady) {
+      try {
+        final token = await FirebaseMessaging.instance.getToken();
+        print("Firebase Token: $token");
+      } catch (e) {
+        print("Error getting Firebase token: $e");
+      }
     }
   }
 

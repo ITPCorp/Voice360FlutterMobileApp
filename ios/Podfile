@@ -1,28 +1,5 @@
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
->>>>>>> 24b9f78d (Added support for android 14)
->>>>>>> b1482309 (added ios file)
-# Uncomment the next line to define a global platform for your project
-platform :ios, '13.0'
-
-target 'Runner' do
-  use_frameworks!
-
-  # Pods for Runner
-  pod 'Firebase/Core'
-  
-  # Add any other necessary pods here
-
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-=======
-=======
 # Uncomment this line to define a global platform for your project
-platform :ios, '13.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -51,7 +28,14 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
+  # FlutterFire + framework linkage: firebase_messaging's plugin includes
+  # `<Firebase/Firebase.h>` non-modularly from inside its own framework
+  # module, which clang rejects. The supported workaround is to link
+  # Firebase statically so it doesn't gain a framework module to begin
+  # with. Setting it via `use_frameworks! :linkage => :static` (instead
+  # of `use_frameworks!`) keeps Flutter's plugin loader happy AND lets
+  # the umbrella header be a plain ObjC include.
+  use_frameworks! :linkage => :static
   use_modular_headers!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
@@ -60,15 +44,28 @@ end
 post_install do |installer|
   installer.generated_projects.each do |project|
     project.targets.each do |target|
-        target.build_configurations.each do |config|
-            config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
-         end
+      target.build_configurations.each do |config|
+        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      end
     end
-end
+  end
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    # firebase_messaging's plugin header `#import <Firebase/Firebase.h>` is a
+    # non-modular include from inside a modular framework, which clang rejects
+    # by default. Allowing it on all Pod targets is the standard FlutterFire
+    # workaround. (See firebase/flutterfire#9627.)
+    target.build_configurations.each do |config|
+      config.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+      # permission_handler needs explicit feature flags for the permissions
+      # we use (microphone, contacts, camera, photos).
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_CONTACTS=1',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_PHOTOS=1',
+      ]
+    end
   end
->>>>>>> cb6bf7b (added support for android 14)
->>>>>>> 24b9f78d (Added support for android 14)
->>>>>>> b1482309 (added ios file)
 end

@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:itp_voice/locator.dart';
+import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart'
     as thr;
 import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart';
@@ -303,6 +304,7 @@ class ChatController extends GetxController {
   }
 
   void _wireFcmListener() {
+    if (!firebaseReady) return;
     FirebaseMessaging.onMessage.listen((message) {
       if (message.notification == null) return;
       if (Get.currentRoute != Routes.CHAT_SCREEN_ROUTE) {

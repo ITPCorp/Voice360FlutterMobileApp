@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +18,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   // ignore: avoid_print
   print('Handling a background message ${message.messageId}');
 }
+
+/// True once `Firebase.initializeApp` has succeeded for this process.
+/// Every Dart-side touch of FirebaseMessaging/FirebaseAuth/Firestore must
+/// gate on this, otherwise `[core/no-app]` will throw on iOS where we
+/// intentionally skip init until a GoogleService-Info.plist is present.
+bool firebaseReady = false;
 
 // Firebase options match the values in android/app/google-services.json (and
 // the iOS GoogleService-Info.plist). Hard-coded so we don't rely on the
@@ -41,19 +49,23 @@ Future<void> main() async {
     print('AppCache init failed: $e');
   }
 
-  try {
-    // On Android, Firebase typically auto-initializes via the
-    // FirebaseInitProvider when google-services.json is present. If that
-    // succeeded, Firebase.apps will already contain [DEFAULT]. Otherwise,
-    // initialize manually with explicit options.
-    if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp(options: _kFirebaseOptions);
+  // Skip Firebase entirely on iOS until a GoogleService-Info.plist is added
+  // to the Xcode project. The Firebase iOS SDK 12.x throws a native
+  // NSException when its config is missing, which can't be caught from Dart
+  // and crashes the whole app on launch. Push notifications won't work on
+  // iOS without it — but SIP/SMS/calls do. Android continues to auto-init
+  // via the FirebaseInitProvider when google-services.json is present.
+  if (!Platform.isIOS) {
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: _kFirebaseOptions);
+      }
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      firebaseReady = true;
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('Firebase init failed: $e\n$st');
     }
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  } catch (e, st) {
-    // Firebase setup is non-fatal — calls and SMS still work without push.
-    // ignore: avoid_print
-    print('Firebase init failed: $e\n$st');
   }
   setupLocator();
   LocalNotificationService.initialize();
