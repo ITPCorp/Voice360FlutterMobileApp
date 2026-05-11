@@ -91,15 +91,26 @@ class CallScreenController extends GetxController
   }
 
   void handelStreams(CallState event) async {
-    MediaStream? stream = event.stream;
-    event.stream?.getAudioTracks().first.enableSpeakerphone(false);
-    localStream = stream;
-    // }
+    final MediaStream? stream = event.stream;
+    if (stream == null) return;
+
     if (event.originator == 'remote') {
-      if (remoteRenderer != null) {
-        remoteRenderer!.srcObject = stream;
-      }
+      // Remote = inbound audio from peer. Route through earpiece by default
+      // (speaker toggle on the call screen flips this).
+      try {
+        stream.getAudioTracks().first.enableSpeakerphone(false);
+      } catch (_) {}
       remoteStream = stream;
+      remoteRenderer?.srcObject = stream;
+    } else {
+      // Local = our mic stream. Ensure every audio track is explicitly
+      // enabled — on some Android stacks the tracks come up disabled and
+      // the only way to wake them up was to mute/unmute via SIP. Force
+      // enabled here so audio flows from the moment the call connects.
+      for (final t in stream.getAudioTracks()) {
+        t.enabled = true;
+      }
+      localStream = stream;
     }
   }
 
@@ -172,6 +183,26 @@ class CallScreenController extends GetxController
         break;
       case CallStateEnum.CONFIRMED:
         print("CallStateEnum.CONFIRMED");
+        // Audio kickstart: on this Android stack the local mic track comes
+        // up with `track.enabled = false` and the only way to flip it to
+        // true is via sip_ua's _toggleMuteAudio(false), which is gated by
+        // the internal _audioMuted flag. We force the cycle once so audio
+        // flows from the moment the call connects (otherwise the user has
+        // to manually tap Mute then Unmute). Done in a microtask so we
+        // don't reentrantly mutate state during the callback.
+        Future.microtask(() {
+          if (call == null) return;
+          try {
+            call!.mute(true, false);
+            call!.unmute(true, false);
+            // sip_ua fires MUTED then UNMUTED callbacks which flip our
+            // audioMuted observable up then down. Force it back to false
+            // so the UI doesn't briefly show "Unmute" label.
+            audioMuted.value = false;
+          } catch (e) {
+            print('Audio kickstart failed: $e');
+          }
+        });
         break;
       case CallStateEnum.HOLD:
         print("CallStateEnum.HOLD");
@@ -275,18 +306,25 @@ class CallScreenController extends GetxController
   }
 
   void muteAudio() {
-    if (audioMuted.value) {
-      call!.unmute(true, false);
-    } else {
+    // Optimistic flip so the UI reacts instantly. The MUTED/UNMUTED state
+    // callback from sip_ua sets the same value, so it's idempotent — no
+    // toggle race like there used to be when the call site also flipped.
+    final next = !audioMuted.value;
+    audioMuted.value = next;
+    if (next) {
       call!.mute(true, false);
+    } else {
+      call!.unmute(true, false);
     }
   }
 
   void muteVideo() {
-    if (videoMuted.value) {
-      call!.unmute(false, true);
-    } else {
+    final next = !videoMuted.value;
+    videoMuted.value = next;
+    if (next) {
       call!.mute(false, true);
+    } else {
+      call!.unmute(false, true);
     }
   }
 

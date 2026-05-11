@@ -68,7 +68,7 @@ class _Key {
   const _Key(this.digit, this.letters);
 }
 
-class _DialKey extends StatelessWidget {
+class _DialKey extends StatefulWidget {
   final String digit;
   final String letters;
   final VoidCallback onTap;
@@ -84,47 +84,74 @@ class _DialKey extends StatelessWidget {
   });
 
   @override
+  State<_DialKey> createState() => _DialKeyState();
+}
+
+class _DialKeyState extends State<_DialKey> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final size = compact ? 56.0 : 68.0;
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Material(
-        color: cs.surfaceContainer,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          onLongPress: onLongPress,
-          customBorder: const CircleBorder(),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  digit,
-                  style: TextStyle(
-                    fontSize: compact ? 24 : 28,
-                    fontWeight: FontWeight.w500,
-                    color: cs.onSurface,
-                    height: 1,
-                  ),
-                ),
-                if (letters.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      letters,
+    final size = widget.compact ? 56.0 : 68.0;
+    return AnimatedScale(
+      scale: _pressed ? 0.9 : 1.0,
+      duration: const Duration(milliseconds: 80),
+      curve: Curves.easeOut,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          decoration: BoxDecoration(
+            color: _pressed
+                ? cs.primary.withOpacity(0.18)
+                : cs.surfaceContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: widget.onTap,
+              onLongPress: widget.onLongPress,
+              onTapDown: (_) => setState(() => _pressed = true),
+              onTapCancel: () => setState(() => _pressed = false),
+              onTapUp: (_) => setState(() => _pressed = false),
+              splashColor: cs.primary.withOpacity(0.22),
+              highlightColor: Colors.transparent,
+              customBorder: const CircleBorder(),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      widget.digit,
                       style: TextStyle(
-                        fontSize: compact ? 8 : 10,
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurfaceVariant,
-                        letterSpacing: 1.6,
+                        fontSize: widget.compact ? 24 : 28,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface,
+                        height: 1,
                       ),
                     ),
-                  ),
-              ],
+                    if (widget.letters.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          widget.letters,
+                          style: TextStyle(
+                            fontSize: widget.compact ? 8 : 10,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurfaceVariant,
+                            letterSpacing: 1.6,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

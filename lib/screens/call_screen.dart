@@ -177,10 +177,7 @@ class CallScreen extends StatelessWidget {
                   : Icons.mic_rounded,
               label: con.audioMuted.value ? 'Unmute' : 'Mute',
               active: con.audioMuted.value,
-              onTap: () {
-                con.muteAudio();
-                con.audioMuted.value = !con.audioMuted.value;
-              },
+              onTap: con.muteAudio,
             ),
             _ToggleButton(
               icon: Icons.dialpad_rounded,
@@ -236,7 +233,7 @@ class CallScreen extends StatelessWidget {
   }
 }
 
-class _ToggleButton extends StatelessWidget {
+class _ToggleButton extends StatefulWidget {
   final IconData icon;
   final String label;
   final bool active;
@@ -252,53 +249,99 @@ class _ToggleButton extends StatelessWidget {
   });
 
   @override
+  State<_ToggleButton> createState() => _ToggleButtonState();
+}
+
+class _ToggleButtonState extends State<_ToggleButton> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final fg = disabled
+    final fg = widget.disabled
         ? Colors.white.withOpacity(0.3)
-        : (active ? const Color(0xFF0F172A) : Colors.white);
-    final bg = active
+        : (widget.active ? const Color(0xFF0F172A) : Colors.white);
+    final bg = widget.active
         ? Colors.white
-        : Colors.white.withOpacity(disabled ? 0.06 : 0.14);
+        : Colors.white.withOpacity(widget.disabled ? 0.06 : 0.14);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox(
-          width: 64,
-          height: 64,
-          child: Material(
-            color: bg,
-            shape: const CircleBorder(),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: disabled
-                  ? null
-                  : () {
-                      HapticFeedback.lightImpact();
-                      onTap();
-                    },
-              child: Icon(icon, color: fg, size: 26),
+        AnimatedScale(
+          scale: _pressed ? 0.88 : 1.0,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: SizedBox(
+            width: 64,
+            height: 64,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              decoration: BoxDecoration(
+                color: bg,
+                shape: BoxShape.circle,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  splashColor: widget.active
+                      ? Colors.black.withOpacity(0.08)
+                      : Colors.white.withOpacity(0.18),
+                  highlightColor: Colors.transparent,
+                  onTapDown: widget.disabled
+                      ? null
+                      : (_) => setState(() => _pressed = true),
+                  onTapCancel: widget.disabled
+                      ? null
+                      : () => setState(() => _pressed = false),
+                  onTapUp: widget.disabled
+                      ? null
+                      : (_) => setState(() => _pressed = false),
+                  onTap: widget.disabled
+                      ? null
+                      : () {
+                          HapticFeedback.lightImpact();
+                          widget.onTap();
+                        },
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 140),
+                    transitionBuilder: (child, anim) => ScaleTransition(
+                      scale: anim,
+                      child: FadeTransition(opacity: anim, child: child),
+                    ),
+                    child: Icon(
+                      widget.icon,
+                      key: ValueKey(widget.icon),
+                      color: fg,
+                      size: 26,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),
         const SizedBox(height: V360Spacing.s2),
-        Text(
-          label,
+        AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 180),
           style: TextStyle(
-            color: disabled
+            color: widget.disabled
                 ? Colors.white.withOpacity(0.4)
                 : Colors.white.withOpacity(0.85),
             fontSize: 11,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.4,
           ),
+          child: Text(widget.label),
         ),
       ],
     );
   }
 }
 
-class _RoundIconButton extends StatelessWidget {
+class _RoundIconButton extends StatefulWidget {
   final IconData icon;
   final Color color;
   final double size;
@@ -311,23 +354,41 @@ class _RoundIconButton extends StatelessWidget {
   });
 
   @override
+  State<_RoundIconButton> createState() => _RoundIconButtonState();
+}
+
+class _RoundIconButtonState extends State<_RoundIconButton> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Material(
-        color: color,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        elevation: 8,
-        shadowColor: color.withOpacity(0.5),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            onTap();
-          },
-          child: Icon(icon, color: Colors.white, size: size * 0.45),
+    return AnimatedScale(
+      scale: _pressed ? 0.9 : 1.0,
+      duration: const Duration(milliseconds: 90),
+      curve: Curves.easeOut,
+      child: SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: Material(
+          color: widget.color,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          elevation: _pressed ? 2 : 8,
+          shadowColor: widget.color.withOpacity(0.5),
+          animationDuration: const Duration(milliseconds: 120),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            splashColor: Colors.white.withOpacity(0.18),
+            highlightColor: Colors.transparent,
+            onTapDown: (_) => setState(() => _pressed = true),
+            onTapCancel: () => setState(() => _pressed = false),
+            onTapUp: (_) => setState(() => _pressed = false),
+            onTap: () {
+              HapticFeedback.mediumImpact();
+              widget.onTap();
+            },
+            child: Icon(widget.icon, color: Colors.white, size: widget.size * 0.45),
+          ),
         ),
       ),
     );

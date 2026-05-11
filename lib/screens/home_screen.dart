@@ -232,28 +232,57 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-class _CallButton extends StatelessWidget {
+class _CallButton extends StatefulWidget {
   final bool enabled;
   final VoidCallback onTap;
   const _CallButton({required this.enabled, required this.onTap});
 
   @override
+  State<_CallButton> createState() => _CallButtonState();
+}
+
+class _CallButtonState extends State<_CallButton> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) {
-    final color = enabled ? V360Colors.callAccept : V360Colors.gray400;
-    return SizedBox(
-      width: 72,
-      height: 72,
-      child: Material(
-        color: color,
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        elevation: enabled ? 4 : 0,
-        shadowColor: color.withOpacity(0.4),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: enabled ? onTap : null,
-          child: const Center(
-            child: Icon(Icons.call_rounded, color: Colors.white, size: 32),
+    final color = widget.enabled ? V360Colors.callAccept : V360Colors.gray400;
+    return AnimatedScale(
+      scale: _pressed ? 0.92 : 1.0,
+      duration: const Duration(milliseconds: 90),
+      curve: Curves.easeOut,
+      child: SizedBox(
+        width: 72,
+        height: 72,
+        child: Material(
+          color: color,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          elevation: widget.enabled ? (_pressed ? 1 : 4) : 0,
+          shadowColor: color.withOpacity(0.4),
+          animationDuration: const Duration(milliseconds: 120),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            splashColor: Colors.white.withOpacity(0.2),
+            highlightColor: Colors.transparent,
+            onTapDown: widget.enabled
+                ? (_) => setState(() => _pressed = true)
+                : null,
+            onTapCancel: widget.enabled
+                ? () => setState(() => _pressed = false)
+                : null,
+            onTapUp: widget.enabled
+                ? (_) => setState(() => _pressed = false)
+                : null,
+            onTap: widget.enabled
+                ? () {
+                    HapticFeedback.mediumImpact();
+                    widget.onTap();
+                  }
+                : null,
+            child: const Center(
+              child: Icon(Icons.call_rounded, color: Colors.white, size: 32),
+            ),
           ),
         ),
       ),

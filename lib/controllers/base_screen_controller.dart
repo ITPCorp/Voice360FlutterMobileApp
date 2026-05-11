@@ -7,6 +7,7 @@ import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/storage_keys.dart';
+import 'package:itp_voice/widgets/custom_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sip_ua/sip_ua.dart';
@@ -138,8 +139,19 @@ class BaseScreenController extends GetxController
         : "SIP SERVER NOT CONNECTED");
     if (defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS) {
-      await Permission.microphone.request();
+      final mic = await Permission.microphone.request();
       await Permission.camera.request();
+      if (!mic.isGranted) {
+        CustomToast.showToast('Microphone permission is required to place calls', true);
+        return null;
+      }
+    }
+    if (helper == null || !helper!.connected) {
+      CustomToast.showToast(
+          'Not connected to call server — check your internet and try again', true);
+      // Nudge the registrar in case we got into a bad state.
+      try { loadSettings(); } catch (_) {}
+      return null;
     }
     if (number == null || number.isEmpty) {
       showDialog<void>(
@@ -176,11 +188,14 @@ class BaseScreenController extends GetxController
       mediaStream.addTrack(userStream.getAudioTracks()[0], addToNative: true);
     } else {
       mediaConstraints['video'] = !voiceonly;
-      mediaStream =
-          await flwebrtc.navigator.mediaDevices.getUserMedia(mediaConstraints);
-
-      helper!.call(number, voiceOnly: voiceonly, mediaStream: mediaStream);
-      // _preferences.setString('dest', number);
+      try {
+        mediaStream =
+            await flwebrtc.navigator.mediaDevices.getUserMedia(mediaConstraints);
+        helper!.call(number, voiceOnly: voiceonly, mediaStream: mediaStream);
+      } catch (e) {
+        print('Call failed: $e');
+        CustomToast.showToast('Could not start call: $e', true);
+      }
       return null;
     }
   }
