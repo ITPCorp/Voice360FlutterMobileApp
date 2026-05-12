@@ -41,54 +41,64 @@ const FirebaseOptions _kFirebaseOptions = FirebaseOptions(
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Open the persistent SWR cache before anything else needs to read it.
-  // Failure is non-fatal — controllers will simply not have warm data.
-  try {
-    await AppCache.instance.init();
-  } catch (e) {
-    // ignore: avoid_print
-    print('AppCache init failed: $e');
-  }
+  // CRITICAL: get to runApp() as fast as possible so the user sees the
+  // purple splash screen instead of a white void. Every heavy bootstrap
+  // step that used to live here (cache open, Firebase init, FCM listener
+  // wiring, demo-mode load, orientation lock) is now fire-and-forget — the
+  // LoginController already has a 3-second startup delay before deciding
+  // whether to auto-route, which absorbs any of these completing late.
+  // Previously a slow disk / slow Firebase init could keep main() blocking
+  // for 10+ seconds, during which users saw a white screen and assumed
+  // the app had crashed.
+  setupLocator();
+  unawaited(_bootstrapInBackground());
+  runApp(const Voice360App());
+}
 
-  // Firebase init pattern (cross-platform):
-  //   1. Android: `google-services` Gradle plugin embeds a content provider
-  //      that registers the [DEFAULT] FirebaseApp before main() runs.
-  //   2. iOS: the FlutterFire native iOS module reads
-  //      `ios/Runner/GoogleService-Info.plist` and registers similarly.
-  //   3. Native init can race with our Dart-side calls, so we:
-  //        a. Try Firebase.app() first. If it returns, we're done.
-  //        b. Otherwise call initializeApp. If THAT throws "already exists",
-  //           native won the race — still a success. Probe again to confirm.
-  //        c. firebaseReady only flips true after Firebase.app() returns
-  //           something usable.
-  Object? lastErr;
-  for (var attempt = 0; attempt < 2; attempt++) {
+Future<void> _bootstrapInBackground() async {
+  // SWR cache — controllers will read empty until this finishes, which is
+  // fine because they all re-fetch on screen mount.
+  unawaited(() async {
     try {
-      Firebase.app();
+      await AppCache.instance.init();
+    } catch (e) {
       // ignore: avoid_print
-      print('[Firebase] Default app available (attempt ${attempt + 1})');
+      print('AppCache init failed: $e');
+    }
+  }());
+
+  // Firebase: prefer the existing native-init app (Android's
+  // google-services content provider / iOS's FlutterFire native module).
+  // Fall back to Dart-side initializeApp ONLY if no [DEFAULT] app exists.
+  // The retry loop is intentionally bounded — if it never wires up, push
+  // notifications won't work but the rest of the app (SIP/SMS/calls)
+  // doesn't depend on Firebase at all.
+  try {
+    Firebase.app();
+    firebaseReady = true;
+    // ignore: avoid_print
+    print('[Firebase] Default app available (native init)');
+  } catch (_) {
+    try {
+      await Firebase.initializeApp(options: _kFirebaseOptions);
       firebaseReady = true;
-      break;
-    } catch (probeErr) {
-      lastErr = probeErr;
-      try {
-        await Firebase.initializeApp(options: _kFirebaseOptions);
+      // ignore: avoid_print
+      print('[Firebase] initializeApp succeeded');
+    } catch (initErr) {
+      final msg = initErr.toString().toLowerCase();
+      if (msg.contains('already exists')) {
+        // Native init won the race after our probe — try once more.
+        try {
+          Firebase.app();
+          firebaseReady = true;
+        } catch (_) {}
+      } else {
         // ignore: avoid_print
-        print('[Firebase] initializeApp succeeded');
-      } catch (initErr) {
-        lastErr = initErr;
-        final msg = initErr.toString().toLowerCase();
-        if (!msg.contains('already exists')) {
-          // ignore: avoid_print
-          print('[Firebase] initializeApp failed: $initErr');
-        }
+        print('[Firebase] init failed: $initErr');
       }
     }
   }
-  if (!firebaseReady) {
-    // ignore: avoid_print
-    print('[Firebase] gave up — no [DEFAULT] app. Last error: $lastErr');
-  } else {
+  if (firebaseReady) {
     try {
       FirebaseMessaging.onBackgroundMessage(
           _firebaseMessagingBackgroundHandler);
@@ -97,19 +107,21 @@ Future<void> main() async {
       print('[Firebase] onBackgroundMessage register failed: $e');
     }
   }
-  setupLocator();
-  // Load the demo-mode toggle from prefs before any repo runs, so the very
-  // first fetch returns canned data when demo mode is on.
-  await DemoModeService.instance.load();
-  // PushService owns the FCM pipeline: foreground banners, taps, deep-links,
-  // plus the local-notifications channel setup. Fire-and-forget.
+
+  // Demo-mode pref + push pipeline + timezones — all fire-and-forget.
+  try {
+    await DemoModeService.instance.load();
+  } catch (_) {}
   unawaited(locator<PushService>().initialize());
-  initializeTimeZones();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-  runApp(const Voice360App());
+  try {
+    initializeTimeZones();
+  } catch (_) {}
+  try {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  } catch (_) {}
 }
 
 class Voice360App extends StatelessWidget {
