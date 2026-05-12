@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -22,15 +23,15 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 /// True once `Firebase.initializeApp` has succeeded for this process.
 /// Every Dart-side touch of FirebaseMessaging/FirebaseAuth/Firestore must
-/// gate on this, otherwise `[core/no-app]` will throw on iOS where we
-/// intentionally skip init until a GoogleService-Info.plist is present.
+/// gate on this, otherwise `[core/no-app]` will throw.
 bool firebaseReady = false;
 
-// Firebase options match android/app/google-services.json (Android) and
-// ios/Runner/GoogleService-Info.plist (iOS). Hard-coded as a fallback so
-// we don't rely on the google-services Gradle plugin's runtime resource
-// merging (flaky on AGP 8.x).
-const FirebaseOptions _kFirebaseOptions = FirebaseOptions(
+// Android-only fallback if the google-services content provider didn't
+// register the [DEFAULT] FirebaseApp before main() ran. NEVER pass these
+// on iOS — the appId is the Android one, and Firebase rejects mismatched
+// options against the already-iOS-registered app. (Shipped in 2.1.3 — was
+// the suspected cause of the iOS release-mode hang reported by users.)
+const FirebaseOptions _kAndroidFirebaseOptions = FirebaseOptions(
   apiKey: 'AIzaSyAwmhPKLNseEmT7AwTsya5jNyDSlq-Tzp8',
   appId: '1:978411142854:android:322d5f317d4945392821c7',
   messagingSenderId: '978411142854',
@@ -41,61 +42,64 @@ const FirebaseOptions _kFirebaseOptions = FirebaseOptions(
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // CRITICAL: get to runApp() as fast as possible so the user sees the
-  // purple splash screen instead of a white void. Every heavy bootstrap
-  // step that used to live here (cache open, Firebase init, FCM listener
-  // wiring, demo-mode load, orientation lock) is now fire-and-forget — the
-  // LoginController already has a 3-second startup delay before deciding
-  // whether to auto-route, which absorbs any of these completing late.
-  // Previously a slow disk / slow Firebase init could keep main() blocking
-  // for 10+ seconds, during which users saw a white screen and assumed
-  // the app had crashed.
+  // CRITICAL: get to runApp() as fast as possible. Every heavy bootstrap
+  // step (cache open, Firebase init, FCM listener wiring, demo-mode load,
+  // orientation lock) is fire-and-forget. The LoginController has a
+  // 3-second startup delay before deciding whether to auto-route, which
+  // absorbs the bootstrap window invisibly.
+  //
+  // 2.1.3 awaited all of this serially in main(), so a slow Firebase
+  // init / mismatched options / slow disk could keep main() blocked
+  // for 15+ minutes. Users saw a white screen (Android) or a frozen
+  // launch image (iOS) and assumed the app had crashed.
   setupLocator();
   unawaited(_bootstrapInBackground());
   runApp(const Voice360App());
 }
 
 Future<void> _bootstrapInBackground() async {
-  // SWR cache — controllers will read empty until this finishes, which is
-  // fine because they all re-fetch on screen mount.
-  unawaited(() async {
-    try {
-      await AppCache.instance.init();
-    } catch (e) {
-      // ignore: avoid_print
-      print('AppCache init failed: $e');
-    }
-  }());
+  try {
+    await AppCache.instance.init();
+  } catch (e) {
+    // ignore: avoid_print
+    print('AppCache init failed: $e');
+  }
 
-  // Firebase: prefer the existing native-init app (Android's
-  // google-services content provider / iOS's FlutterFire native module).
-  // Fall back to Dart-side initializeApp ONLY if no [DEFAULT] app exists.
-  // The retry loop is intentionally bounded — if it never wires up, push
-  // notifications won't work but the rest of the app (SIP/SMS/calls)
-  // doesn't depend on Firebase at all.
+  // Firebase: trust the native-init path on both platforms.
+  //   * Android: `google-services` plugin embeds a content provider
+  //     that registers [DEFAULT] before main() runs.
+  //   * iOS: FlutterFire's native iOS module reads
+  //     GoogleService-Info.plist and registers similarly.
+  // Only Android has a Dart-side fallback; iOS would only get here if
+  // native init genuinely failed, and our hardcoded options are Android's.
   try {
     Firebase.app();
     firebaseReady = true;
     // ignore: avoid_print
     print('[Firebase] Default app available (native init)');
   } catch (_) {
-    try {
-      await Firebase.initializeApp(options: _kFirebaseOptions);
-      firebaseReady = true;
-      // ignore: avoid_print
-      print('[Firebase] initializeApp succeeded');
-    } catch (initErr) {
-      final msg = initErr.toString().toLowerCase();
-      if (msg.contains('already exists')) {
-        // Native init won the race after our probe — try once more.
-        try {
-          Firebase.app();
-          firebaseReady = true;
-        } catch (_) {}
-      } else {
+    if (Platform.isAndroid) {
+      try {
+        await Firebase.initializeApp(options: _kAndroidFirebaseOptions);
+        firebaseReady = true;
         // ignore: avoid_print
-        print('[Firebase] init failed: $initErr');
+        print('[Firebase] initializeApp succeeded');
+      } catch (initErr) {
+        final msg = initErr.toString().toLowerCase();
+        if (msg.contains('already exists')) {
+          try {
+            Firebase.app();
+            firebaseReady = true;
+          } catch (_) {}
+        } else {
+          // ignore: avoid_print
+          print('[Firebase] init failed: $initErr');
+        }
       }
+    } else {
+      // iOS fallback: do NOT call initializeApp with Android options.
+      // ignore: avoid_print
+      print('[Firebase] iOS native init did not register [DEFAULT] app');
     }
   }
   if (firebaseReady) {
@@ -108,7 +112,6 @@ Future<void> _bootstrapInBackground() async {
     }
   }
 
-  // Demo-mode pref + push pipeline + timezones — all fire-and-forget.
   try {
     await DemoModeService.instance.load();
   } catch (_) {}
