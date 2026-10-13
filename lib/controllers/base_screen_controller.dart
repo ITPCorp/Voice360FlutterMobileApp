@@ -8,6 +8,7 @@ import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
+import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -31,6 +32,13 @@ class BaseScreenController extends GetxController
     // failures are handled with auto-reconnect inside the service.
     locator<GlobalSocketService>().connect();
     super.onInit();
+  }
+
+  @override
+  void onReady() {
+    super.onReady();
+    // Open the chat from a notification tapped during cold launch.
+    locator<PushService>().flushPendingNavigation();
   }
 
   updateCurrentTab(int val) {

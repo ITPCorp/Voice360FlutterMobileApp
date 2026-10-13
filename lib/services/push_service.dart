@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/routes.dart';
 
@@ -39,6 +40,12 @@ class PushService {
   StreamSubscription<RemoteMessage>? _onMessageSub;
   StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
   StreamSubscription<String>? _onTokenRefreshSub;
+
+  /// Notification tap that arrived before the user reached BaseScreen
+  /// (cold launch sits on LoginScreen for ~3s of auto-login). ChatScreen
+  /// needs BaseScreenController, so pushing it early throws and leaves a
+  /// gray error page that also blocks the auto-login redirect.
+  List<String?>? _pendingThreadArgs;
 
   /// One-time setup: notification channel, plugin init, listener wiring.
   /// Safe to call without Firebase being ready (will no-op the FCM parts).
@@ -164,6 +171,7 @@ class PushService {
   /// doesn't keep receiving pushes after logout.
   Future<void> onLogout() async {
     _cachedToken = null;
+    _pendingThreadArgs = null;
     try {
       await FirebaseMessaging.instance.deleteToken();
     } catch (_) {}
@@ -241,6 +249,10 @@ class PushService {
   }) {
     // ignore: avoid_print
     print('[Push] navigate → thread=$threadId to=$toPhoneNumber from=$fromNumber');
+    if (!Get.isRegistered<BaseScreenController>()) {
+      _pendingThreadArgs = [threadId, toPhoneNumber, fromNumber];
+      return;
+    }
     // If we're already sitting in a chat screen (possibly for a different
     // thread), Get.toNamed against the same route silently no-ops the
     // initState path → ChatController is reused and Get.arguments is never
@@ -252,6 +264,19 @@ class PushService {
     Get.toNamed(
       Routes.CHAT_SCREEN_ROUTE,
       arguments: [threadId, toPhoneNumber, fromNumber],
+    );
+  }
+
+  /// Called by BaseScreenController once the home screen is up. Opens the
+  /// thread from a notification that was tapped before login finished.
+  void flushPendingNavigation() {
+    final args = _pendingThreadArgs;
+    _pendingThreadArgs = null;
+    if (args == null) return;
+    _navigateToThread(
+      threadId: args[0]!,
+      toPhoneNumber: args[1],
+      fromNumber: args[2],
     );
   }
 
