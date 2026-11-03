@@ -6,6 +6,7 @@ export 'tokens.dart';
 export 'theme.dart';
 export 'widgets/v360_button.dart';
 export 'widgets/v360_avatar.dart';
+export 'widgets/v360_group_avatar.dart';
 export 'widgets/v360_card.dart';
 export 'widgets/v360_empty_state.dart';
 export 'widgets/v360_skeleton.dart';

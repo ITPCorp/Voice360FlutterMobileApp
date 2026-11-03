@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/chat_controller.dart';
 import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/screens/transcript_modal.dart';
@@ -90,12 +91,20 @@ class _ChatScreenState extends State<ChatScreen> {
           // Force re-render when loadTitle flips after participants populate.
           // ignore: unused_local_variable
           final _ = con.loadTitle.value;
-          final display = _peerDisplay();
+          final members = con.members;
+          final isGroup = isGroupThread(members);
+          final display =
+              isGroup ? groupDisplayName(members) : _peerDisplay();
           final number = _peerNumber();
           final showNumber = display != number;
+          final subtitle = isGroup
+              ? '${groupPeopleLabel(members)}: ${groupFullNames(members)}'
+              : (showNumber ? number : 'SMS · From ${con.myNumber}');
           return Row(
             children: [
-              V360Avatar(name: display, size: 36),
+              isGroup
+                  ? const V360GroupAvatar(size: 36)
+                  : V360Avatar(name: display, size: 36),
               const SizedBox(width: V360Spacing.s2),
               Expanded(
                 child: Column(
@@ -110,7 +119,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      showNumber ? number : 'SMS · From ${con.myNumber}',
+                      subtitle,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: cs.onSurfaceVariant,
                           ),
@@ -123,15 +132,25 @@ class _ChatScreenState extends State<ChatScreen> {
           );
         }),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.call_rounded, color: V360Colors.callAccept),
-            tooltip: 'Call',
-            onPressed: () => base.handleCall(_peerNumber(), context),
-          ),
+          // Calls go to one person, so a group has no call button (the web
+          // disables it with "Open a 1:1 conversation to call").
+          Obx(() {
+            // ignore: unused_local_variable
+            final _ = con.loadTitle.value;
+            if (con.isGroup) return const SizedBox.shrink();
+            return IconButton(
+              icon:
+                  const Icon(Icons.call_rounded, color: V360Colors.callAccept),
+              tooltip: 'Call',
+              onPressed: () => base.handleCall(_peerNumber(), context),
+            );
+          }),
           IconButton(
             icon: const Icon(Icons.info_outline_rounded),
             tooltip: 'Conversation info',
-            onPressed: () => Get.toNamed(
+            onPressed: () => con.isGroup
+                ? _showGroupMembers(context)
+                : Get.toNamed(
               Routes.CHAT_DETAIL_ROUTE,
               // Pass both the peer number AND any participant.contact we
               // already have from the threads list. The (i) controller would
@@ -179,6 +198,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       : 'Start the conversation below.',
                 );
               }
+              final members = con.members;
+              final isGroup = isGroupThread(members);
               return ListView.builder(
                 controller: _scroll,
                 reverse: true,
@@ -213,6 +234,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     message: m,
                     isMe: isMe,
                     showTimestamp: showTimestamp,
+                    // Group threads: say who sent each inbound text.
+                    senderLabel: isGroup && !isMe
+                        ? senderName(members, m.messageParticipant)
+                        : null,
                   );
                 },
               );
@@ -221,6 +246,49 @@ class _ChatScreenState extends State<ChatScreen> {
           _Composer(controller: con),
         ],
       ),
+    );
+  }
+
+  /// Member list for a group thread, the mobile version of the web
+  /// ChatPanel "Group Conversation" view.
+  void _showGroupMembers(BuildContext context) {
+    final others = otherMembers(con.members);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final cs = Theme.of(ctx).colorScheme;
+        final tt = Theme.of(ctx).textTheme;
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    V360Spacing.s4, 0, V360Spacing.s4, V360Spacing.s2),
+                child: Text(
+                  'Group conversation · ${others.length} people, plus you',
+                  style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              for (final m in others)
+                ListTile(
+                  leading: V360Avatar(name: memberName(m), size: 36),
+                  title: Text(memberName(m)),
+                  subtitle: Text(m.fullName != null
+                      ? formatPhoneNumber(m.number)
+                      : 'Not a saved contact'),
+                  trailing: m.dndSms
+                      ? Text(
+                          'Opted out',
+                          style: tt.labelSmall?.copyWith(color: cs.error),
+                        )
+                      : null,
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -237,10 +305,14 @@ class _MessageBubble extends StatelessWidget {
   final bool isMe;
   final bool showTimestamp;
 
+  /// Sender name above an inbound bubble in a group thread, else null.
+  final String? senderLabel;
+
   const _MessageBubble({
     required this.message,
     required this.isMe,
     required this.showTimestamp,
+    this.senderLabel,
   });
 
   @override
@@ -277,6 +349,17 @@ class _MessageBubble extends StatelessWidget {
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.4,
                   ),
+                ),
+              ),
+            ),
+          if (senderLabel != null && senderLabel!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 2),
+              child: Text(
+                senderLabel!,
+                style: tt.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -653,7 +736,7 @@ class _CallTimelineEntry extends StatelessWidget {
                       width: 30,
                       height: 30,
                       decoration: BoxDecoration(
-                        color: iconColor.withOpacity(0.12),
+                        color: iconColor.withValues(alpha: 0.12),
                         shape: BoxShape.circle,
                       ),
                       alignment: Alignment.center,
@@ -772,7 +855,7 @@ class _TranscriptPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Material(
-      color: cs.primary.withOpacity(0.1),
+      color: cs.primary.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(V360Radius.full),
       clipBehavior: Clip.antiAlias,
       child: InkWell(

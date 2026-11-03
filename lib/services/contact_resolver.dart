@@ -1,7 +1,10 @@
 import 'package:itp_voice/cache/cache_service.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/models/get_contacts_reponse_model/contact_response.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart'
     as thr;
+import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart'
+    as msg;
 
 /// Resolves the best human-readable name for an SMS thread / call peer.
 ///
@@ -20,6 +23,8 @@ class ContactResolver {
   /// Resolved name for a thread row in the Messages list. Returns the phone
   /// number if no match.
   static String resolveThreadDisplay(thr.MessageThreads thread) {
+    final members = membersOfThread(thread);
+    if (isGroupThread(members)) return groupDisplayName(members);
     final peer = _peerOf(thread);
     if (peer == null) return _phoneOf(thread) ?? 'Unknown';
     final embedded = peer.contactName;
@@ -46,6 +51,55 @@ class ContactResolver {
     return _matchLocalByPhone(phone);
   }
 
+  /// Thread-list participants as [ChatMember]s, names filled from the
+  /// embedded contact, else the local contacts cache.
+  static List<ChatMember> membersOfThread(thr.MessageThreads thread) => [
+        for (final p in thread.participants ?? const <thr.Participants>[])
+          if ((p.number ?? '').isNotEmpty)
+            _member(
+              number: p.number!,
+              isSelf: p.isSelf == true,
+              firstname: p.contact?.firstname,
+              lastname: p.contact?.lastname,
+            ),
+      ];
+
+  /// Same for the thread-messages participant model.
+  static List<ChatMember> membersOf(List<msg.Participants>? participants) => [
+        for (final p in participants ?? const <msg.Participants>[])
+          if ((p.number ?? '').isNotEmpty)
+            _member(
+              number: p.number!,
+              isSelf: p.isSelf == true,
+              firstname: p.contact?.firstname,
+              lastname: p.contact?.lastname,
+            ),
+      ];
+
+  static ChatMember _member({
+    required String number,
+    required bool isSelf,
+    String? firstname,
+    String? lastname,
+  }) {
+    final hasEmbedded =
+        '${firstname ?? ''}${lastname ?? ''}'.trim().isNotEmpty;
+    if (isSelf || hasEmbedded) {
+      return ChatMember(
+        number: number,
+        isSelf: isSelf,
+        firstname: firstname,
+        lastname: lastname,
+      );
+    }
+    final local = _matchLocalContact(number);
+    return ChatMember(
+      number: number,
+      firstname: local?.firstname,
+      lastname: local?.lastname,
+    );
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
@@ -68,6 +122,11 @@ class ContactResolver {
   static String _digits(String s) => s.replaceAll(RegExp(r'\D'), '');
 
   static String? _matchLocalByPhone(String? raw) {
+    final c = _matchLocalContact(raw);
+    return c == null ? null : _formatName(c);
+  }
+
+  static Contact? _matchLocalContact(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     if (!AppCache.instance.isReady) return null;
     final wanted = _digits(raw);
@@ -80,8 +139,7 @@ class ContactResolver {
       if (candidate == wanted ||
           candidate.endsWith(wanted) ||
           wanted.endsWith(candidate)) {
-        final name = _formatName(c);
-        if (name != null) return name;
+        if (_formatName(c) != null) return c;
       }
     }
     return null;

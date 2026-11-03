@@ -4,6 +4,7 @@ import 'package:itp_voice/controllers/messages_controller.dart';
 import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/services/contact_resolver.dart';
 
 class MessagesScreen extends StatefulWidget {
@@ -189,18 +190,25 @@ class _MessagesScreenState extends State<MessagesScreen> {
             orElse: () => t.participants!.first)
         .number;
     final displayName = ContactResolver.resolveThreadDisplay(t);
+    final members = ContactResolver.membersOfThread(t);
+    final isGroup = isGroupThread(members);
     // When the display is a real name we show the phone number as the
     // sub-label of the row's title row; otherwise we just show the last
-    // message (existing behaviour).
-    final showSecondaryPhone =
-        displayName != (other ?? 'Unknown') && (other ?? '').isNotEmpty;
+    // message (existing behaviour). Groups show the head count instead.
+    final showSecondaryPhone = !isGroup &&
+        displayName != (other ?? 'Unknown') &&
+        (other ?? '').isNotEmpty;
     final unread = (t.unreadMessages ?? 0) > 0;
     return V360ListTile(
-      leading: V360Avatar(name: displayName, size: 48),
+      leading: isGroup
+          ? const V360GroupAvatar(size: 48)
+          : V360Avatar(name: displayName, size: 48),
       title: displayName,
-      subtitle: showSecondaryPhone
-          ? '${other!} · ${t.lastMessage ?? ''}'
-          : (t.lastMessage ?? ''),
+      subtitle: isGroup
+          ? '${groupPeopleLabel(members)} · ${t.lastMessage ?? ''}'
+          : showSecondaryPhone
+              ? '${other!} · ${t.lastMessage ?? ''}'
+              : (t.lastMessage ?? ''),
       titleStyle: TextStyle(
         fontWeight: unread ? FontWeight.w700 : FontWeight.w600,
       ),

@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart';
 import 'package:itp_voice/repo/messages_repo.dart';
 import 'package:itp_voice/cache/cache_service.dart';
+import 'package:itp_voice/services/contact_resolver.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/numbers_service.dart';
 import 'package:itp_voice/services/threads_cache.dart';
@@ -122,17 +124,22 @@ class MessagesController extends GetxController {
     }
   }
 
+  /// Search by any participant's number or resolved name, so a group
+  /// matches on every member, not only the first one.
   filterThreads() {
     isloading.value = true;
+    final query = searchController.text.trim().toLowerCase();
+    final queryDigits = query.replaceAll(RegExp(r'\D'), '');
     final matches = <MessageThreads>[];
     for (MessageThreads thread in allThreads) {
-      if (thread.participants!
-          .where((element) => element.isSelf != true)
-          .toList()[0]
-          .number!
-          .contains(searchController.text)) {
-        matches.add(thread);
-      }
+      final others = otherMembers(ContactResolver.membersOfThread(thread));
+      final hit = others.any((m) =>
+          m.number.contains(searchController.text) ||
+          (queryDigits.isNotEmpty &&
+              m.number.replaceAll(RegExp(r'\D'), '').contains(queryDigits)) ||
+          (query.isNotEmpty &&
+              (m.fullName ?? '').toLowerCase().contains(query)));
+      if (hit) matches.add(thread);
     }
     filteredThreads.assignAll(matches);
     isloading.value = false;

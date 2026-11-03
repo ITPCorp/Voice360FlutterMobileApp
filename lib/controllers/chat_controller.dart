@@ -3,12 +3,13 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart'
     as thr;
 import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart';
-import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/cache/cache_service.dart';
+import 'package:itp_voice/services/contact_resolver.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/numbers_service.dart';
 import 'package:itp_voice/services/threads_cache.dart';
@@ -76,10 +77,17 @@ class ChatController extends GetxController {
     }
   }
 
-  Rxn<GetThreadMessagesResponseModel> _messages = Rxn();
+  final Rxn<GetThreadMessagesResponseModel> _messages = Rxn();
   GetThreadMessagesResponseModel? get messages => _messages.value;
 
   TextEditingController messageController = TextEditingController();
+
+  /// Everyone in the thread as [ChatMember]s (us included), names resolved.
+  List<ChatMember> get members =>
+      ContactResolver.membersOf(_messages.value?.result?.participants);
+
+  /// More than one peer besides our number.
+  bool get isGroup => isGroupThread(members);
 
   /// Subscription to the global notification socket (lifetime = chat screen).
   StreamSubscription<GlobalSocketEvent>? _socketSub;
