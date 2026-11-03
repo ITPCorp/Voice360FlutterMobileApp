@@ -215,7 +215,11 @@ class Messages {
 
   Messages.fromPayload(Map<String, dynamic> json) {
     messageStatus = json['message_status'];
-    pk = json['message_thread_pk'];
+    // The message's own pk. This used to read message_thread_pk, a String
+    // thread id from the socket, which threw on the int? field and dropped
+    // live inbound bubbles.
+    final rawPk = json['pk'];
+    pk = rawPk is int ? rawPk : int.tryParse('${rawPk ?? ''}');
     messageBody = json['message'];
     messageProviderId = json['message_provider_id'];
     messageMmsMedia = json['media_id'];

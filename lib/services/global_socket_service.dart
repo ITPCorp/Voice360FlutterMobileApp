@@ -239,29 +239,96 @@ class SmsEventReader {
     }
   }
 
-  /// Best-effort thread id pulled from the payload.
-  String? get threadId {
-    final t = _parsedPayload?['message_thread_id'] ??
-        _parsedPayload?['thread_id'] ??
-        event.data['message_thread_pk'] ??
-        event.data['thread']?['pk'];
-    return t?.toString();
+  /// [key] from the event, looking in the flat data, its `metadata` block
+  /// and the decoded `payload`, in that order. voice-api puts the group
+  /// fields (thread_id, owner_number, participants) in the event metadata.
+  dynamic _field(String key) {
+    final direct = event.data[key];
+    if (direct != null) return direct;
+    final meta = event.data['metadata'];
+    if (meta is Map && meta[key] != null) return meta[key];
+    return _parsedPayload?[key];
   }
 
-  String? get fromNumber =>
-      (event.data['from_number'] ?? _parsedPayload?['from_number'])?.toString();
+  /// Best-effort thread id pulled from the payload. thread_id is the
+  /// group-aware id (full participant set), so it goes first.
+  String? get threadId {
+    final t = _field('thread_id') ??
+        _parsedPayload?['message_thread_id'] ??
+        event.data['message_thread_pk'] ??
+        event.data['thread']?['pk'] ??
+        event.data['thread']?['id'];
+    final s = t?.toString();
+    return (s == null || s.isEmpty || s == 'null') ? null : s;
+  }
 
+  String? get fromNumber => _field('from_number')?.toString();
+
+  /// Every recipient on the event. SMS_DELIVERED carries the list under
+  /// `to_number`, SMS_RECEIVED under `to_numbers_list`.
+  List<String> get toNumbers {
+    final out = <String>[];
+    for (final key in const ['to_numbers_list', 'to_number']) {
+      final v = _field(key);
+      if (v is List) {
+        out.addAll(v.where((e) => e != null).map((e) => e.toString()));
+      } else if (v != null && v.toString().isNotEmpty) {
+        out.add(v.toString());
+      }
+    }
+    return out;
+  }
+
+  /// First recipient, kept for callers that only know about 1:1.
   String? get toNumber {
-    final to = event.data['to_number'] ?? _parsedPayload?['to_number'];
-    if (to != null) return to.toString();
-    final list = event.data['to_numbers_list'];
-    if (list is List && list.isNotEmpty) return list.first?.toString();
-    return null;
+    final list = toNumbers;
+    return list.isEmpty ? null : list.first;
+  }
+
+  /// The Voice360 number this copy of the event is for: owner_number when
+  /// the backend sends it, else the old guess (our number is the sender on
+  /// sms.sent, the first recipient on sms.received).
+  String? get ownerNumber {
+    final owner = _field('owner_number')?.toString();
+    if (owner != null && owner.isNotEmpty) return owner;
+    return event.isSmsSent ? fromNumber : toNumber;
+  }
+
+  /// [ownerNumber], except that without owner_number an inbound group text
+  /// lists several to-numbers and ours may not be the first one: prefer the
+  /// recipient equal to [mine].
+  String? ownerNumberFor(String mine) {
+    final owner = _field('owner_number')?.toString();
+    if (owner != null && owner.isNotEmpty) return owner;
+    if (!event.isSmsSent && mine.isNotEmpty) {
+      final digits = mine.replaceAll(RegExp(r'\D'), '');
+      for (final n in toNumbers) {
+        final d = n.replaceAll(RegExp(r'\D'), '');
+        if (d.isNotEmpty && (d.endsWith(digits) || digits.endsWith(d))) {
+          return n;
+        }
+      }
+    }
+    return ownerNumber;
+  }
+
+  /// Full participant set of the thread, sender included, as numbers.
+  /// Entries can be bare numbers or {number, is_self, ...} objects.
+  List<String> get participantNumbers {
+    final v = _field('participants');
+    if (v is! List) return const [];
+    final out = <String>[];
+    for (final p in v) {
+      final n = p is Map ? p['number'] : p;
+      if (n != null && n.toString().isNotEmpty) out.add(n.toString());
+    }
+    return out;
   }
 
   String? get body {
     return (event.data['body'] ??
-            _parsedPayload?['message_body'] ??
+            _field('sms_body') ??
+            _field('message_body') ??
             _parsedPayload?['message'] ??
             event.data['thread']?['last_message'])
         ?.toString();
@@ -281,7 +348,7 @@ class SmsEventReader {
     final candidates = [
       _parsedPayload?['id'],
       _parsedPayload?['pk'],
-      event.data['message_content_id'],
+      _field('message_content_id'),
       _parsedPayload?['message_content_id'],
     ];
     for (final c in candidates) {
@@ -296,7 +363,7 @@ class SmsEventReader {
   }
 
   String? get providerId =>
-      (event.data['provider_message_id'] ??
+      (_field('provider_message_id') ??
               _parsedPayload?['message_provider_id'] ??
               _parsedPayload?['provider_message_id'])
           ?.toString();
@@ -318,6 +385,7 @@ class SmsEventReader {
   Map<String, dynamic> toLegacyPayload() {
     return {
       'message_status': null,
+      'pk': messagePk,
       'message_thread_pk': threadId,
       'message': body ?? '',
       'message_provider_id': providerId,

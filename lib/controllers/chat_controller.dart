@@ -286,21 +286,22 @@ class ChatController extends GetxController {
     if (!event.isAnySms) return;
     final reader = SmsEventReader(event);
 
-    // Filter to this thread. Direction matters:
-    //  - sms.received: payload's from_number is the peer (== threadNumber)
-    //  - sms.sent:     payload's from_number is OUR number; the peer is
-    //                  to_number (or to_numbers_list[0]). Compare that
-    //                  against threadNumber.
-    // Also accept a direct message_thread_id match when present.
-    final eventThreadId = reader.threadId;
+    // Filter to this thread. owner_number says which of our numbers the
+    // event is for, thread_id / participants say which conversation (a group
+    // and a 1:1 with the same person are different threads). Old payloads
+    // without those fall back to the single peer: from_number on
+    // sms.received, the recipient on sms.sent.
     final myTid = threadId.value;
-    final fromNum = reader.fromNumber;
-    final toNum = reader.toNumber;
-    final peer = event.isSmsSent ? toNum : fromNum;
-    final matchesThisThread = (myTid != null &&
-            eventThreadId != null &&
-            eventThreadId == myTid) ||
-        (peer != null && _digitsEqual(peer, threadNumber));
+    final peer = event.isSmsSent ? reader.toNumber : reader.fromNumber;
+    final matchesThisThread = smsEventBelongsToThread(
+      myNumber: myNumber,
+      ownerNumber: reader.ownerNumberFor(myNumber),
+      eventThreadId: reader.threadId,
+      threadId: myTid,
+      eventParticipants: reader.participantNumbers,
+      legacyPeer: peer,
+      threadOthers: recipientNumbers,
+    );
     if (!matchesThisThread) return;
 
     // A group send gets one delivery receipt per recipient, all for the same
@@ -369,17 +370,6 @@ class ChatController extends GetxController {
         repo.markAsRead(myTid, myNumber);
       } catch (_) {}
     }
-  }
-
-  /// Phone-number compare ignoring punctuation and a leading `1`.
-  /// Mirrors the web's normalizePhone in RealChatContainer.jsx.
-  bool _digitsEqual(String? a, String? b) {
-    if (a == null || b == null) return false;
-    final na = a.replaceAll(RegExp(r'[^0-9]'), '');
-    final nb = b.replaceAll(RegExp(r'[^0-9]'), '');
-    final sa = na.startsWith('1') ? na.substring(1) : na;
-    final sb = nb.startsWith('1') ? nb.substring(1) : nb;
-    return sa == sb && sa.isNotEmpty;
   }
 
   void _persistMessagesToCache() {

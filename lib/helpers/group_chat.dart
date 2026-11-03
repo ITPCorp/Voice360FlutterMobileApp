@@ -224,3 +224,49 @@ int indexOfMessagePk<T>(List<T> list, int? pk, int? Function(T) pkOf) {
   if (pk == null) return -1;
   return list.indexWhere((m) => pkOf(m) == pk);
 }
+
+// ---------------------------------------------------------------------------
+// Websocket routing
+// ---------------------------------------------------------------------------
+
+/// Whether an SMS socket event belongs to the open thread.
+///
+/// - [ownerNumber] is the Voice360 number this copy of the event is for
+///   (metadata.owner_number, else the old from/to fallback). A group can
+///   hold two of our numbers; each gets its own copy, so match only ours.
+/// - [eventThreadId] (metadata.thread_id) decides when both sides have one.
+///   It is keyed by the full participant set, so a 1:1 with Ana no longer
+///   catches a group text Ana sent.
+/// - Otherwise the event's participant set (sender included) must equal the
+///   thread's: [threadOthers] plus us.
+/// - Old payloads with neither fall back to the single peer, 1:1 only.
+bool smsEventBelongsToThread({
+  required String myNumber,
+  required String? ownerNumber,
+  required String? eventThreadId,
+  required String? threadId,
+  required List<String> eventParticipants,
+  required String? legacyPeer,
+  required List<String> threadOthers,
+}) {
+  if (myNumber.isNotEmpty &&
+      (ownerNumber ?? '').isNotEmpty &&
+      !sameNumber(ownerNumber, myNumber)) {
+    return false;
+  }
+  if ((eventThreadId ?? '').isNotEmpty && (threadId ?? '').isNotEmpty) {
+    return eventThreadId == threadId;
+  }
+  final wanted = threadOthers.map(normalizeNumber).where((n) => n.isNotEmpty);
+  final wantedSet = wanted.toSet();
+  if (eventParticipants.isNotEmpty && wantedSet.isNotEmpty) {
+    final me = normalizeNumber(myNumber.isNotEmpty ? myNumber : ownerNumber);
+    final got = eventParticipants
+        .map(normalizeNumber)
+        .where((n) => n.isNotEmpty && n != me)
+        .toSet();
+    return got.length == wantedSet.length && got.containsAll(wantedSet);
+  }
+  if (wantedSet.length != 1) return false;
+  return sameNumber(legacyPeer, threadOthers.first);
+}
