@@ -196,8 +196,8 @@ class Endpoints {
   }
 
   // ignore: non_constant_identifier_names
-  static String FIND_THREAD(api_id, number, String query) {
-    return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/chat/sms/${number}/find-thread?$query";
+  static String FIND_THREAD(apiId, number, String query) {
+    return '${Config.BASE_URL_ITP_VOICE}$apiId/my-extension/chat/sms/$number/find-thread?$query';
   }
 
   static String SEND_MESSAGE(api_id, number) {
