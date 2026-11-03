@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/contacts_controller.dart';
 import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/models/get_contacts_reponse_model/contact_response.dart';
 import 'package:itp_voice/routes.dart';
 
@@ -14,10 +15,11 @@ import 'package:itp_voice/routes.dart';
 /// contacts search; if the input looks like a phone number we also offer
 /// a "Send to {number}" row so they can message arbitrary numbers.
 ///
-/// Picking a result navigates to the chat screen in **compose mode**
-/// (threadId=null). The chat controller will look up an existing thread
-/// for that peer; if none exists it stays in compose mode and creates
-/// one when the user hits send.
+/// Each pick becomes a recipient chip; Next opens the chat screen in
+/// **compose mode** (threadId=null). One recipient is the old 1:1 flow.
+/// Several start a group text (MMS): up to 10 people including our number,
+/// same limit and wording as the web compose modal. A contact who opted out
+/// of SMS (dnd_sms) can't be added.
 class NewMessageScreen extends StatefulWidget {
   const NewMessageScreen({super.key});
 
@@ -37,6 +39,15 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
           : Get.put(ContactsController());
   Timer? _debounce;
   String _query = '';
+
+  /// Chosen recipients, in pick order.
+  final List<ChatMember> _picked = [];
+
+  /// The saved contact behind each picked number, for the 1:1 header.
+  final Map<String, Contact> _pickedContacts = {};
+
+  /// Why the last pick was refused, shown under the chips.
+  String? _error;
 
   @override
   void initState() {
@@ -95,22 +106,81 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
       );
       return;
     }
-    _openChat(peer: c.phone!, contact: c);
+    final name = '${c.firstname ?? ''} ${c.lastname ?? ''}'.trim();
+    if (c.dndSms == true) {
+      setState(() => _error =
+          '${name.isEmpty ? c.phone : name} has opted out of SMS. You cannot '
+              'send messages to this contact.');
+      return;
+    }
+    if (_add(ChatMember(
+      number: c.phone!,
+      firstname: c.firstname,
+      lastname: c.lastname,
+    ))) {
+      _pickedContacts[normalizeNumber(c.phone)] = c;
+    }
   }
 
   void _pickRawNumber() {
     final n = _normalizeNumber(_to.text);
     if (n.isEmpty) return;
-    _openChat(peer: n);
+    _add(ChatMember(number: n));
   }
 
-  void _openChat({required String peer, Contact? contact}) {
+  /// Add a chip. Refuses duplicates and anything past the group cap.
+  bool _add(ChatMember m) {
+    final error = recipientAddError(_picked, m);
+    if (error != null) {
+      setState(() => _error = error);
+      return false;
+    }
     HapticFeedback.selectionClick();
-    // CHAT_SCREEN args: [threadId, peer/myNumber, peer-or-contact, ...]
-    // Compose mode = threadId null. arg[1] is the peer in compose mode.
+    setState(() {
+      _picked.add(m);
+      _error = null;
+    });
+    _to.clear();
+    _onChanged('');
+    _focus.requestFocus();
+    return true;
+  }
+
+  void _remove(ChatMember m) {
+    setState(() {
+      _picked.remove(m);
+      _pickedContacts.remove(normalizeNumber(m.number));
+      _error = null;
+    });
+  }
+
+  bool get _canContinue => _picked.isNotEmpty || _inputLooksLikeNumber;
+
+  /// Next: a typed number that wasn't added yet counts as a pick.
+  void _continue() {
+    if (_inputLooksLikeNumber) {
+      final before = _picked.length;
+      _pickRawNumber();
+      if (_picked.length == before) return; // refused, error shown
+    }
+    if (_picked.isEmpty) return;
+    HapticFeedback.selectionClick();
+    if (_picked.length == 1) {
+      final only = _picked.first;
+      final contact = _pickedContacts[normalizeNumber(only.number)];
+      // CHAT_SCREEN args: [threadId, peer/myNumber, peer-or-contact, ...]
+      // Compose mode = threadId null. arg[1] is the peer in compose mode.
+      Get.offNamed(
+        Routes.CHAT_SCREEN_ROUTE,
+        arguments: [null, only.number, contact ?? only.number],
+      );
+      return;
+    }
+    // Group: arg[4] carries the recipients; the chat seeds them as
+    // participants and sends one group message to all of them.
     Get.offNamed(
       Routes.CHAT_SCREEN_ROUTE,
-      arguments: [null, peer, contact ?? peer],
+      arguments: [null, null, null, null, List<ChatMember>.of(_picked)],
     );
   }
 
@@ -126,16 +196,62 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
           onPressed: () => Get.back(),
           tooltip: 'Cancel',
         ),
+        actions: [
+          TextButton(
+            onPressed: _canContinue ? _continue : null,
+            child: const Text('Next'),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_picked.isNotEmpty) _chips(cs, tt),
             _toField(cs, tt),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    V360Spacing.s4, 0, V360Spacing.s4, V360Spacing.s2),
+                child: Text(
+                  _error!,
+                  style: tt.bodySmall?.copyWith(color: cs.error),
+                ),
+              ),
             Divider(height: 1, color: cs.outlineVariant),
             Expanded(child: _results(cs, tt)),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _chips(ColorScheme cs, TextTheme tt) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          V360Spacing.s4, V360Spacing.s3, V360Spacing.s4, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: V360Spacing.s2,
+            runSpacing: V360Spacing.s2,
+            children: [
+              for (final m in _picked)
+                InputChip(
+                  label: Text(memberName(m)),
+                  onDeleted: () => _remove(m),
+                  deleteButtonTooltipMessage: 'Remove',
+                ),
+            ],
+          ),
+          const SizedBox(height: V360Spacing.s2),
+          Text(
+            '${_picked.length + 1} of $kMaxGroupParticipants people, '
+            'including you',
+            style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }
@@ -171,11 +287,13 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
               },
               style: tt.bodyLarge,
               decoration: InputDecoration(
-                hintText: 'Name or phone number',
+                hintText: _picked.isEmpty
+                    ? 'Name or phone number'
+                    : 'Add another person',
                 border: InputBorder.none,
                 isCollapsed: true,
                 hintStyle: tt.bodyLarge?.copyWith(
-                  color: cs.onSurfaceVariant.withOpacity(0.6),
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.6),
                 ),
               ),
             ),
@@ -344,7 +462,7 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
                     ),
                   ),
                   Text(
-                    'New message',
+                    _picked.isEmpty ? 'New message' : 'Add to this message',
                     style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                   ),
                 ],

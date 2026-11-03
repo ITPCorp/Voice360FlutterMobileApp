@@ -270,3 +270,18 @@ bool smsEventBelongsToThread({
   if (wantedSet.length != 1) return false;
   return sameNumber(legacyPeer, threadOthers.first);
 }
+
+// ---------------------------------------------------------------------------
+// Compose
+// ---------------------------------------------------------------------------
+
+/// Why [candidate] can't join the recipients of a new message, or null.
+/// Mirrors the web ComposeModal: no duplicates, at most
+/// [kMaxGroupRecipients] people besides us.
+String? recipientAddError(List<ChatMember> picked, ChatMember candidate) {
+  if (picked.any((m) => sameNumber(m.number, candidate.number))) {
+    return '${memberName(candidate)} is already in this conversation';
+  }
+  if (picked.length >= kMaxGroupRecipients) return kGroupLimitMessage;
+  return null;
+}

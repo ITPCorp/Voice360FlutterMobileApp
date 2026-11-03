@@ -174,6 +174,41 @@ class ChatController extends GetxController {
 
     // Last-resort: derive peer from contact.
     threadNumber ??= contact?.phone;
+
+    // arg 4 (optional): recipients of a new group conversation, picked on
+    // the New Message screen. Seed them as participants so the header,
+    // reply-all list and opt-out check work before the thread exists.
+    final raw4 = args.length > 4 ? args[4] : null;
+    if (raw4 is List && threadId.value == null) {
+      final picked = otherMembers(raw4.whereType<ChatMember>());
+      if (picked.length > 1) _seedCompose(picked);
+    }
+  }
+
+  /// True when this chat was opened to start a new group (compose mode).
+  bool composingGroup = false;
+
+  void _seedCompose(List<ChatMember> picked) {
+    composingGroup = true;
+    threadNumber = picked.first.number;
+    _messages.value = GetThreadMessagesResponseModel(
+      result: Result(messages: [], participants: [
+        Participants(number: myNumber, isSelf: true),
+        for (final m in picked)
+          Participants(
+            number: m.number,
+            isSelf: false,
+            contact: (m.firstname == null && m.lastname == null && !m.dndSms)
+                ? null
+                : ParticipantContact(
+                    firstname: m.firstname,
+                    lastname: m.lastname,
+                    phone: m.number,
+                    dndSms: m.dndSms,
+                  ),
+          ),
+      ]),
+    );
   }
 
   /// Bridge from the threads-list participant shape (`thr.Participants`) to
@@ -233,13 +268,15 @@ class ChatController extends GetxController {
     if (threadNumber == null || threadNumber!.isEmpty || myNumber.isEmpty) {
       return;
     }
+    // A group is found by its whole member set, a 1:1 by the one peer.
+    final peers = recipientNumbers;
     final cache = locator<ThreadsCache>();
     if (forceRefresh) {
       await cache.invalidateAndRefresh(myNumber);
     }
-    final hit = cache.findThreadForPeer(
+    final hit = cache.findThreadForPeers(
       fromNumber: myNumber,
-      peerNumber: threadNumber!,
+      peerNumbers: peers,
     );
     if (hit != null) {
       threadId.value = hit.pk?.toString();
@@ -248,9 +285,9 @@ class ChatController extends GetxController {
     // No cached match yet — block on a single fetch and try again.
     try {
       await cache.get(myNumber);
-      final retry = cache.findThreadForPeer(
+      final retry = cache.findThreadForPeers(
         fromNumber: myNumber,
-        peerNumber: threadNumber!,
+        peerNumbers: peers,
       );
       if (retry != null) {
         threadId.value = retry.pk?.toString();
@@ -499,6 +536,14 @@ class ChatController extends GetxController {
         CustomToast.showToast(reason, true);
         return;
       }
+    } else if (contact?.dndSms == true ||
+        optedOutMembers(members).isNotEmpty) {
+      CustomToast.showToast(
+        'This contact has opted out of SMS. You cannot send messages to '
+        'this contact.',
+        true,
+      );
+      return;
     }
 
     String? imagePath;
@@ -546,6 +591,8 @@ class ChatController extends GetxController {
   /// mode, this is the moment to promote ourselves to thread mode — find the
   /// newly-created thread and switch over.
   Future<void> _onSendSucceeded(Messages message) async {
+    // The send response has no message_participant; it is ours.
+    message.messageParticipant ??= myNumber;
     final list = _messages.value?.result?.messages;
     if (list != null) {
       // A delivery receipt can beat the POST response and already have put
@@ -567,6 +614,8 @@ class ChatController extends GetxController {
       }
       _persistMessagesToCache();
       isLoading.refresh();
+      // New group: the stub had no thread yet. The send response names it.
+      if (isCompose) await _promoteToThread(message);
       return;
     }
     // Compose mode: there's no in-memory thread yet. Bootstrap a minimal
@@ -580,12 +629,22 @@ class ChatController extends GetxController {
     );
     _messages.value = GetThreadMessagesResponseModel(result: newResult);
     isLoading.refresh();
+    await _promoteToThread(message);
+  }
 
-    // Now ask the server for the real thread id so subsequent reads/sends and
-    // websocket pairing work normally. Force a refresh — the thread we just
-    // created won't be in the cached snapshot.
-    await _findExistingThreadForPeer(forceRefresh: true);
+  /// Leave compose mode once the first message created the thread. The send
+  /// response carries message_thread_id; older servers that don't get the
+  /// old path, a forced threads refresh and a lookup by peer(s).
+  Future<void> _promoteToThread(Messages sent) async {
+    final tid = sent.messageThreadId;
+    if (tid != null) {
+      threadId.value = tid.toString();
+    } else {
+      await _findExistingThreadForPeer(forceRefresh: true);
+    }
     if (threadId.value != null) {
+      composingGroup = false;
+      _persistMessagesToCache();
       _loadThreadMode();
     }
   }

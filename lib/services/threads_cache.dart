@@ -1,4 +1,5 @@
 import 'package:injectable/injectable.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart';
 import 'package:itp_voice/repo/messages_repo.dart';
 
@@ -58,27 +59,29 @@ class ThreadsCache {
     await _refresh(fromNumber);
   }
 
-  /// Look up a thread by the peer's phone number, normalised to digits-only
-  /// (handles "+1 555-..." vs "5551234567"). Returns `null` if no match.
-  MessageThreads? findThreadForPeer({
+  /// Look up a thread by its exact set of peers (everyone but us), numbers
+  /// compared digits-only. One peer finds the 1:1 and skips group threads,
+  /// so a new 1:1 with Ana doesn't open the group Ana is in; several peers
+  /// match only the group with exactly those members.
+  MessageThreads? findThreadForPeers({
     required String fromNumber,
-    required String peerNumber,
+    required List<String> peerNumbers,
   }) {
     final threads = _byNumber[fromNumber]?.threads;
     if (threads == null || threads.isEmpty) return null;
-    final wantedDigits = peerNumber.replaceAll(RegExp(r'\D'), '');
-    if (wantedDigits.isEmpty) return null;
-
+    final wanted = peerNumbers
+        .map(normalizeNumber)
+        .where((n) => n.isNotEmpty)
+        .toSet();
+    if (wanted.isEmpty) return null;
     for (final t in threads) {
-      for (final p in (t.participants ?? const [])) {
-        if (p.isSelf == true) continue;
-        final candidate = (p.number ?? '').replaceAll(RegExp(r'\D'), '');
-        if (candidate.isEmpty) continue;
-        if (candidate == wantedDigits ||
-            candidate.endsWith(wantedDigits) ||
-            wantedDigits.endsWith(candidate)) {
-          return t;
-        }
+      final others = <String>{
+        for (final p in (t.participants ?? const <Participants>[]))
+          if (p.isSelf != true && normalizeNumber(p.number).isNotEmpty)
+            normalizeNumber(p.number),
+      };
+      if (others.length == wanted.length && others.containsAll(wanted)) {
+        return t;
       }
     }
     return null;

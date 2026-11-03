@@ -71,6 +71,10 @@ class Result {
 class Messages {
   String? messageStatus;
   int? pk;
+
+  /// Thread the message belongs to. Set on the send response, which is how
+  /// a new conversation learns its thread id.
+  int? messageThreadId;
   String? messageBody;
   String? messageProviderId;
   dynamic messageMmsMedia;
@@ -157,7 +161,11 @@ class Messages {
         : null;
     messageTimestamp = json['message_timestamp'];
     messageParticipantId = json['message_participant_id'];
-    messageParticipant = json['message_participant'];
+    final rawParticipant = json['message_participant'];
+    messageParticipant = rawParticipant is String ? rawParticipant : null;
+    final rawThread = json['message_thread_id'];
+    messageThreadId =
+        rawThread is int ? rawThread : int.tryParse('${rawThread ?? ''}');
     isDelivered = true;
 
     // Call/voicemail extras — same row can carry these fields when the API
@@ -242,6 +250,7 @@ class Messages {
     data['message_timestamp'] = messageTimestamp;
     data['message_participant_id'] = messageParticipantId;
     data['message_participant'] = messageParticipant;
+    if (messageThreadId != null) data['message_thread_id'] = messageThreadId;
     // Persist call/voicemail extras so cached chats restore correctly.
     if (itemType != null) data['item_type'] = itemType;
     if (callDirection != null) data['call_direction'] = callDirection;
