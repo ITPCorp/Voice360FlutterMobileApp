@@ -137,7 +137,15 @@ class BaseRequester {
     }
   }
 
-  Future basePostAPI(url, body, {successMsg, loading, protected = false, bool useDio = false}) async {
+  /// [errorBody]: with useDio, called with the decoded body of a non-2xx
+  /// response so the caller can show the server's reason. The return value
+  /// stays null on errors, as before.
+  Future basePostAPI(url, body,
+      {successMsg,
+      loading,
+      protected = false,
+      bool useDio = false,
+      void Function(Object? body)? errorBody}) async {
     protected ? await updateToken() : null;
 
     if (loading == true && loading != null) {
@@ -170,6 +178,7 @@ class BaseRequester {
       } catch (e) {
         if (e is pdio.DioError) {
           print(e.response);
+          errorBody?.call(e.response?.data);
         } else {
           print(e);
         }

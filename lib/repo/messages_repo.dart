@@ -26,7 +26,7 @@ class MessagesRepo {
       }
       return DemoModeService.instance.fakeThreadsResponse();
     }
-    String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    String? apiId = SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
       final base = Endpoints.GET_MESSAGE_THREADS(apiId, myNumber);
       final url = '$base?offset=$offset&limit=$kThreadsPageLimit';
@@ -48,7 +48,7 @@ class MessagesRepo {
     if (DemoModeService.instance.enabled) {
       return DemoModeService.instance.fakeThreadMessages(threadId);
     }
-    String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    String? apiId = SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
       String number = myNumber;
       final apiResponse = await BaseRequesterMethods.baseRequester.baseGetAPI(
@@ -66,7 +66,7 @@ class MessagesRepo {
   }
 
   Future<void> markAsRead(String threadId, String myNumber) async {
-    String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    String? apiId = SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
       String number = myNumber;
       final apiResponse = await BaseRequesterMethods.baseRequester.basePostAPI(
@@ -83,31 +83,38 @@ class MessagesRepo {
     }
   }
 
-  Future<Messages?> sendMessage(String myNumber, String body, String to, [String? image]) async {
-    String? apiId = await SharedPreferencesMethod.getString(StorageKeys.API_ID);
+  /// Body of the last failed send (voice-api's {message, error}), for the
+  /// caller to turn into a reason with sendErrorMessage(). Null on success.
+  Object? lastSendErrorBody;
+
+  /// Send one message. [to] is the `to_numbers_list` JSON, see
+  /// toNumbersListJson(); a group send lists every recipient in it and goes
+  /// out as one request, one thread, one message.
+  Future<Messages?> sendMessage(String myNumber, String body, String to,
+      [String? image]) async {
+    final String? apiId =
+        SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    lastSendErrorBody = null;
     try {
-      // {
-      //     "body": body,
-      //     "from_number": myNumber,
-      //     "to_numbers_list": "{\"list\": [\"+13052990233\"]}"
-      //   }
-      Dio dio = Dio();
-      print(body);
-      Map<String, dynamic> data = {
+      final Map<String, dynamic> data = {
         "body": body,
         "from_number": myNumber,
         "to_numbers_list": to,
       };
-      print(to);
       if (image != null) {
         data["file"] = await MultipartFile.fromFile(image);
       }
-      final resp = await BaseRequesterMethods.baseRequester
-          .basePostAPI(Endpoints.SEND_MESSAGE(apiId, myNumber), data, useDio: true);
-      print(resp);
-      return Messages.fromJson(resp["result"]);
+      final resp = await BaseRequesterMethods.baseRequester.basePostAPI(
+        Endpoints.SEND_MESSAGE(apiId, myNumber),
+        data,
+        useDio: true,
+        errorBody: (b) => lastSendErrorBody = b,
+      );
+      if (resp is! Map || resp["result"] is! Map) return null;
+      return Messages.fromJson(
+          (resp["result"] as Map).cast<String, dynamic>());
     } catch (e) {
-      if (e is DioError) {
+      if (e is DioException) {
         print(e.response);
       }
       print(e.toString());

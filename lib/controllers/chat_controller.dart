@@ -92,6 +92,9 @@ class ChatController extends GetxController {
   /// Subscription to the global notification socket (lifetime = chat screen).
   StreamSubscription<GlobalSocketEvent>? _socketSub;
 
+  /// Socket events already applied to this thread, see [SmsEventDeduper].
+  final SmsEventDeduper _seenEvents = SmsEventDeduper();
+
   @override
   void onClose() {
     _socketSub?.cancel();
@@ -194,6 +197,7 @@ class ChatController extends GetxController {
                   lastname: p.contact!.lastname,
                   phone: p.contact!.phone,
                   email: p.contact!.email,
+                  dndSms: p.contact!.dndSms,
                 ),
         ),
     ];
@@ -298,6 +302,13 @@ class ChatController extends GetxController {
             eventThreadId == myTid) ||
         (peer != null && _digitsEqual(peer, threadNumber));
     if (!matchesThisThread) return;
+
+    // A group send gets one delivery receipt per recipient, all for the same
+    // message. Handle the first, drop the rest.
+    if (_seenEvents.isRepeat(
+        event.innerType ?? '', [reader.messagePk, reader.providerId])) {
+      return;
+    }
 
     final pk = reader.messagePk;
     final providerId = reader.providerId; // sms_id from the WS event
@@ -465,6 +476,16 @@ class ChatController extends GetxController {
     );
   }
 
+  /// Who a send from this screen goes to. In a group thread that is every
+  /// other participant (reply-all, like the web's getReplyNumbers); in a 1:1
+  /// it is the one peer.
+  List<String> get recipientNumbers {
+    final ms = members;
+    if (isGroupThread(ms)) return replyNumbers(ms);
+    final peer = threadNumber;
+    return (peer == null || peer.isEmpty) ? const [] : [peer];
+  }
+
   Future<void> sendMessage({bool isImage = false}) async {
     if (myNumber.isEmpty) {
       CustomToast.showToast(
@@ -474,46 +495,57 @@ class ChatController extends GetxController {
       return;
     }
 
-    final peer = threadNumber;
-    if (peer == null || peer.isEmpty) {
+    final to = recipientNumbers;
+    if (to.isEmpty) {
       CustomToast.showToast('No recipient.', true);
       return;
     }
+    final group = to.length > 1;
+    // Carrier cap and opted-out members, checked before the request goes
+    // out (the web fails the bubble with the same reason).
+    if (group) {
+      final reason = groupSendBlockReason(members);
+      if (reason != null) {
+        CustomToast.showToast(reason, true);
+        return;
+      }
+    }
 
-    // Image path
+    String? imagePath;
+    String text = '';
     if (isImage) {
       final image = await ImagePicker().pickImage(source: ImageSource.gallery);
       if (image == null) return;
-      isMessageLoading.value = true;
-      try {
-        final to = _toListJson([peer]);
-        final message =
-            await repo.sendMessage(myNumber, '', to, image.path);
-        if (message != null) {
-          message.isDelivered = false;
-          await _onSendSucceeded(message);
-        } else {
-          CustomToast.showToast('Please check your internet connection', true);
-        }
-      } finally {
-        isMessageLoading.value = false;
-      }
-      return;
+      imagePath = image.path;
+    } else {
+      text = messageController.text.trim();
+      if (text.isEmpty) return;
     }
+    if (isMessageLoading.value) return;
 
-    // Text path
-    final text = messageController.text.trim();
-    if (text.isEmpty || isMessageLoading.value) return;
     isMessageLoading.value = true;
     try {
-      final to = _toListJson([peer]);
-      final message = await repo.sendMessage(myNumber, text, to);
-      messageController.clear();
+      // One POST with the whole recipient list: voice-api keys the thread by
+      // the full participant set and sends a single group MMS.
+      final message = await repo.sendMessage(
+          myNumber, text, toNumbersListJson(to), imagePath);
+      if (!isImage) messageController.clear();
       if (message != null) {
         message.isDelivered = false;
         await _onSendSucceeded(message);
       } else {
-        CustomToast.showToast('Please check your internet connection', true);
+        final body = repo.lastSendErrorBody;
+        final reason = (group || isTooManyRecipientsError(body))
+            ? sendErrorMessage(body)
+            : '';
+        CustomToast.showToast(
+          reason.isNotEmpty
+              ? reason
+              : (body != null
+                  ? 'Message not sent.'
+                  : 'Please check your internet connection'),
+          true,
+        );
       }
     } finally {
       isMessageLoading.value = false;
@@ -524,8 +556,26 @@ class ChatController extends GetxController {
   /// mode, this is the moment to promote ourselves to thread mode — find the
   /// newly-created thread and switch over.
   Future<void> _onSendSucceeded(Messages message) async {
-    if (_messages.value != null) {
-      _messages.value!.result!.messages!.insert(0, message);
+    final list = _messages.value?.result?.messages;
+    if (list != null) {
+      // A delivery receipt can beat the POST response and already have put
+      // this message on screen. Update that bubble instead of adding a
+      // second one, and don't let the POST's "sent" walk back a final
+      // delivered/failed status.
+      final idx = indexOfMessagePk<Messages>(list, message.pk, (m) => m.pk);
+      if (idx != -1) {
+        final existing = list[idx];
+        final keep = kFinalStatuses
+            .contains(existing.messageStatus?.toLowerCase() ?? '');
+        if (!keep) {
+          existing.messageStatus = message.messageStatus;
+          existing.isDelivered = message.isDelivered;
+        }
+        existing.messageMmsMedia ??= message.messageMmsMedia;
+      } else {
+        list.insert(0, message);
+      }
+      _persistMessagesToCache();
       isLoading.refresh();
       return;
     }
@@ -549,7 +599,4 @@ class ChatController extends GetxController {
       _loadThreadMode();
     }
   }
-
-  String _toListJson(List<String> numbers) =>
-      '{"list": ["${numbers.join(',')}"]}';
 }

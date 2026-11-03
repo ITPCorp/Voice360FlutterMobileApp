@@ -322,15 +322,19 @@ class ParticipantContact {
   String? phone;
   String? email;
 
+  /// contact.dnd_sms: opted out of texts. Blocks a group send.
+  bool? dndSms;
+
   ParticipantContact(
-      {this.pk, this.firstname, this.lastname, this.phone, this.email});
+      {this.pk, this.firstname, this.lastname, this.phone, this.email, this.dndSms});
 
   ParticipantContact.fromJson(Map<String, dynamic> json)
       : pk = (json['pk'] as num?)?.toInt(),
         firstname = json['firstname'] as String?,
         lastname = json['lastname'] as String?,
         phone = json['phone'] as String?,
-        email = json['email'] as String?;
+        email = json['email'] as String?,
+        dndSms = json['dnd_sms'] == true;
 
   Map<String, dynamic> toJson() => {
         'pk': pk,
@@ -338,5 +342,6 @@ class ParticipantContact {
         'lastname': lastname,
         'phone': phone,
         'email': email,
+        if (dndSms == true) 'dnd_sms': true,
       };
 }

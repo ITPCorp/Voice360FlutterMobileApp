@@ -61,6 +61,7 @@ class ContactResolver {
               isSelf: p.isSelf == true,
               firstname: p.contact?.firstname,
               lastname: p.contact?.lastname,
+              dndSms: p.contact?.dndSms == true,
             ),
       ];
 
@@ -73,6 +74,7 @@ class ContactResolver {
               isSelf: p.isSelf == true,
               firstname: p.contact?.firstname,
               lastname: p.contact?.lastname,
+              dndSms: p.contact?.dndSms == true,
             ),
       ];
 
@@ -81,6 +83,7 @@ class ContactResolver {
     required bool isSelf,
     String? firstname,
     String? lastname,
+    bool dndSms = false,
   }) {
     final hasEmbedded =
         '${firstname ?? ''}${lastname ?? ''}'.trim().isNotEmpty;
@@ -90,6 +93,7 @@ class ContactResolver {
         isSelf: isSelf,
         firstname: firstname,
         lastname: lastname,
+        dndSms: dndSms,
       );
     }
     final local = _matchLocalContact(number);
@@ -97,6 +101,7 @@ class ContactResolver {
       number: number,
       firstname: local?.firstname,
       lastname: local?.lastname,
+      dndSms: dndSms || local?.dndSms == true,
     );
   }
 

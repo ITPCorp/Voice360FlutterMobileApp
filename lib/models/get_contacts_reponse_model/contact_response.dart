@@ -82,6 +82,9 @@ class Contact {
   String? lastContacted;
   dynamic website;
 
+  /// dnd_sms: the contact opted out of texts.
+  bool? dndSms;
+
   Contact(
       {this.publicContact,
       this.facebookRefId,
@@ -113,7 +116,8 @@ class Contact {
       this.contactListId,
       this.businessName,
       this.lastContacted,
-      this.website});
+      this.website,
+      this.dndSms});
 
   Contact.fromJson(Map<String, dynamic> json) {
     publicContact = json['public_contact'];
@@ -147,6 +151,7 @@ class Contact {
     businessName = json['business_name'];
     lastContacted = json['last_contacted'];
     website = json['website'];
+    dndSms = json['dnd_sms'] == true;
   }
 
   Map<String, dynamic> toJson() {
@@ -182,6 +187,7 @@ class Contact {
     data['business_name'] = this.businessName;
     data['last_contacted'] = this.lastContacted;
     data['website'] = this.website;
+    if (dndSms == true) data['dnd_sms'] = true;
     return data;
   }
 }
