@@ -285,3 +285,50 @@ String? recipientAddError(List<ChatMember> picked, ChatMember candidate) {
   if (picked.length >= kMaxGroupRecipients) return kGroupLimitMessage;
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// find-thread
+// ---------------------------------------------------------------------------
+
+/// E.164 the way messageparticipants stores numbers ("+13055551234"):
+/// voice-api's find-thread matches participant numbers exactly.
+String toE164(String? number) {
+  final digits = (number ?? '').replaceAll(RegExp(r'\D'), '');
+  if (digits.isEmpty) return '';
+  if (digits.length == 10) return '+1$digits';
+  return '+$digits';
+}
+
+/// Query string for GET .../my-extension/chat/sms/<ours>/find-thread.
+///
+/// A 1:1 sends second_participant as URL-encoded E.164; an unencoded "+"
+/// decodes to a space and the lookup misses. A group sends `participants`,
+/// every other member comma separated (our number is the path number), with
+/// an empty second_participant, as the web does.
+String findThreadQuery(List<String> peers) {
+  final numbers = peers.map(toE164).where((n) => n.isNotEmpty).toList();
+  final buf = StringBuffer('offset=0&limit=20');
+  if (numbers.length > 1) {
+    buf
+      ..write('&second_participant=')
+      ..write('&participants=')
+      ..write(Uri.encodeQueryComponent(numbers.join(',')));
+  } else {
+    buf
+      ..write('&second_participant=')
+      ..write(numbers.isEmpty ? '' : Uri.encodeQueryComponent(numbers.first));
+  }
+  return buf.toString();
+}
+
+/// Thread id out of a find-thread response ({result: [{message_thread_id}]}
+/// or result: null when there is no such thread).
+String? threadIdFromFindThread(Object? response) {
+  if (response is! Map) return null;
+  final result = response['result'];
+  final row = result is List && result.isNotEmpty ? result.first : result;
+  if (row is! Map) return null;
+  final id = row['message_thread_id'] ?? row['id'] ?? row['pk'];
+  final s = id?.toString();
+  return (s == null || s.isEmpty || s == 'null') ? null : s;
+}

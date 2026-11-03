@@ -282,7 +282,15 @@ class ChatController extends GetxController {
       threadId.value = hit.pk?.toString();
       return;
     }
-    // No cached match yet — block on a single fetch and try again.
+    // Ask voice-api: find-thread matches the exact participant set, so it
+    // also finds threads past the first cached page.
+    final found = await repo.findThread(myNumber, peers);
+    if (found != null) {
+      threadId.value = found;
+      return;
+    }
+    // No match (or the lookup failed) — block on a single fetch and try
+    // the cached list again.
     try {
       await cache.get(myNumber);
       final retry = cache.findThreadForPeers(

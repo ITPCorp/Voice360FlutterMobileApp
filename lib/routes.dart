@@ -195,6 +195,11 @@ class Endpoints {
     return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/chat/sms/${number}/$threadId/mark-read";
   }
 
+  // ignore: non_constant_identifier_names
+  static String FIND_THREAD(api_id, number, String query) {
+    return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/chat/sms/${number}/find-thread?$query";
+  }
+
   static String SEND_MESSAGE(api_id, number) {
     return Config.BASE_URL_ITP_VOICE + "${api_id}/my-extension/chat/sms/${number}";
   }

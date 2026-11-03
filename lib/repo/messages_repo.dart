@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart' hide Result;
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart' as thr show Result;
 import 'package:itp_voice/models/get_thread_messages_response_model/get_thread_messages_response_model.dart';
@@ -80,6 +81,28 @@ class MessagesRepo {
       return;
     } catch (e) {
       print(e.toString());
+    }
+  }
+
+  /// Server-side thread lookup by participant set (voice-api find-thread).
+  /// [peers] is everyone but us: one number for a 1:1, all of them for a
+  /// group. Returns the thread id, or null when there is none or the call
+  /// failed (the caller falls back to the cached threads list).
+  Future<String?> findThread(String myNumber, List<String> peers) async {
+    if (DemoModeService.instance.enabled || peers.isEmpty) return null;
+    final String? apiId = SharedPreferencesMethod.getString(StorageKeys.API_ID);
+    try {
+      final res = await BaseRequesterMethods.baseRequester.baseGetAPI(
+        Endpoints.FIND_THREAD(apiId, myNumber, findThreadQuery(peers)),
+        errorToast: false,
+      );
+      if (res is Map && res['errors'] == false) {
+        return threadIdFromFindThread(res);
+      }
+      return null;
+    } catch (e) {
+      print(e.toString());
+      return null;
     }
   }
 
