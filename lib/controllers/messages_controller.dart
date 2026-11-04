@@ -72,6 +72,15 @@ class MessagesController extends GetxController {
     _nextOffset = 0;
     _reachedEnd = false;
 
+    // No texting number assigned: there is nothing to ask the API for (the
+    // URL without a number is a 404), so show the empty state.
+    if (from.isEmpty) {
+      allThreads.clear();
+      _reachedEnd = true;
+      isloading.value = false;
+      return;
+    }
+
     final res = await repo.getMessageThreads(from, offset: 0);
     if (res is GetMessageThreadsResponseModel) {
       final fresh = res.result?.messageThreads ?? const <MessageThreads>[];

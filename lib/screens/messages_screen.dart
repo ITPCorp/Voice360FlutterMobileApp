@@ -139,6 +139,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     return Obx(() {
+      // Read the observable before the early return. GetX throws when an Obx
+      // builds without touching one, and in a release build that paints the
+      // whole Messages tab gray for a user with no texting number.
+      final selected = con.selectedNumber;
       if (con.numbers.isEmpty) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -163,7 +167,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               const SizedBox(width: V360Spacing.s2),
               Expanded(
                 child: DropdownButton<String>(
-                  value: con.selectedNumber,
+                  value: selected,
                   isDense: true,
                   isExpanded: true,
                   underline: const SizedBox.shrink(),
