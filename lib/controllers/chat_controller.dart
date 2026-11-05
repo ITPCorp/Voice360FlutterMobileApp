@@ -570,10 +570,13 @@ class ChatController extends GetxController {
     try {
       // One POST with the whole recipient list: voice-api keys the thread by
       // the full participant set and sends a single group MMS.
-      final message = await repo.sendMessage(
-          myNumber, text, toNumbersListJson(to), imagePath);
-      if (!isImage) messageController.clear();
+      // voice-api only accepts +1 form recipients. A number typed in New
+      // Message arrives here as typed ("3055551234"), so convert on the way
+      // out, and keep the typed text when the send fails.
+      final message = await repo.sendMessage(myNumber, text,
+          toNumbersListJson(to.map(toE164).toList()), imagePath);
       if (message != null) {
+        if (!isImage) messageController.clear();
         message.isDelivered = false;
         await _onSendSucceeded(message);
       } else {
