@@ -27,10 +27,48 @@ class ChatMember {
     this.dndSms = false,
   });
 
+  /// Contact name, or null when there is none. A placeholder name (see
+  /// [isPlaceholderName]) counts as none, so the number is shown instead.
   String? get fullName {
+    if (isPlaceholderName(firstname, lastname)) return null;
     final full = '${firstname ?? ''} ${lastname ?? ''}'.trim();
     return full.isEmpty ? null : full;
   }
+
+  /// First name for short labels, null when missing or a placeholder.
+  String? get shortName {
+    if (isPlaceholderName(firstname, lastname)) return null;
+    final first = firstname?.trim();
+    return (first == null || first.isEmpty) ? null : first;
+  }
+}
+
+/// Contacts created automatically are named after their own number
+/// ("+13052048763 Contact"). That is not a name: showing it next to a real
+/// formatted number gave headers like "+13052048763, +1 (561) 221-0454".
+bool isPlaceholderName(String? firstname, String? lastname) {
+  final first = (firstname ?? '').trim();
+  if (first.isEmpty) return false;
+  if (!RegExp(r'^[\d\s()+.\-]+$').hasMatch(first)) return false;
+  if (first.replaceAll(RegExp(r'\D'), '').length < 7) return false;
+  final last = (lastname ?? '').trim().toLowerCase();
+  return last.isEmpty || last == 'contact';
+}
+
+/// Which thread participants are "us". The thread-messages endpoint marks
+/// every number the account owns as is_self, so a group holding two of the
+/// account's numbers opened as a 1:1 and a reply reached one person. Only
+/// the number we are texting from is us. When that number is unknown or is
+/// not in the thread, the server's flags are kept.
+List<bool> ownSelfFlags(
+  List<String?> numbers,
+  List<bool?> serverFlags,
+  String? myNumber,
+) {
+  final server = [for (final f in serverFlags) f == true];
+  if (myNumber == null || myNumber.isEmpty) return server;
+  final mine = [for (final n in numbers) sameNumber(n, myNumber)];
+  return mine.contains(true) ? mine : server;
 }
 
 /// Digits only, US leading 1 dropped, so "+1 (305) 555-1234" and
@@ -83,10 +121,8 @@ String memberName(ChatMember m) => m.fullName ?? formatPhoneNumber(m.number);
 
 /// Short label for a group: first names (or numbers), "+N" past three.
 String groupDisplayName(Iterable<ChatMember> members, {int maxShown = 3}) {
-  final names = otherMembers(members).map((m) {
-    final first = m.firstname?.trim();
-    return (first != null && first.isNotEmpty) ? first : memberName(m);
-  }).toList();
+  final names =
+      otherMembers(members).map((m) => m.shortName ?? memberName(m)).toList();
   if (names.length <= maxShown) return names.join(', ');
   return '${names.take(maxShown).join(', ')} +${names.length - maxShown}';
 }

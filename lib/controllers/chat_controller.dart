@@ -465,6 +465,19 @@ class ChatController extends GetxController {
     isLoading.value = false;
   }
 
+  /// Flag only the number we are texting from as us (see [ownSelfFlags]).
+  void _markOwnNumber(List<Participants>? ps) {
+    if (ps == null || ps.isEmpty) return;
+    final flags = ownSelfFlags(
+      [for (final p in ps) p.number],
+      [for (final p in ps) p.isSelf],
+      myNumber,
+    );
+    for (var i = 0; i < ps.length; i++) {
+      ps[i].isSelf = flags[i];
+    }
+  }
+
   /// Merge a fresh server response with whatever we've already got
   /// in-memory. The big concern: the server's thread-messages endpoint
   /// sometimes returns participants WITHOUT the embedded `contact` block
@@ -473,6 +486,7 @@ class ChatController extends GetxController {
   /// So: replace messages, but for each participant keep the existing
   /// `contact` if the fresh one is null.
   void _mergeFreshResponse(GetThreadMessagesResponseModel res) {
+    _markOwnNumber(res.result?.participants);
     final existing = _messages.value;
     if (existing == null) {
       _messages.value = res;

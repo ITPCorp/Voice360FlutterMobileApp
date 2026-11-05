@@ -80,11 +80,75 @@ void main() {
     });
   });
 
+  group('placeholder contact names', () {
+    test('a contact named after its number is not a name', () {
+      expect(isPlaceholderName('+13052048763', 'Contact'), isTrue);
+      expect(isPlaceholderName('(305) 204-8763', ''), isTrue);
+      expect(isPlaceholderName('3052048763', null), isTrue);
+      expect(isPlaceholderName('Ana', 'Contact'), isFalse);
+      expect(isPlaceholderName('+13052048763', 'Lopez'), isFalse);
+      expect(isPlaceholderName('24', 'Contact'), isFalse);
+      expect(isPlaceholderName(null, null), isFalse);
+    });
+
+    test('group header formats every unnamed number the same way', () {
+      const members = [
+        ChatMember(number: '+13053301236', isSelf: true),
+        ChatMember(
+            number: '+13052048763',
+            firstname: '+13052048763',
+            lastname: 'Contact'),
+        ChatMember(number: '+15612210454'),
+      ];
+      expect(groupDisplayName(members),
+          '+1 (305) 204-8763, +1 (561) 221-0454');
+      expect(groupFullNames(members),
+          '+1 (305) 204-8763, +1 (561) 221-0454');
+      expect(senderName(members, '+13052048763'), '+1 (305) 204-8763');
+    });
+  });
+
+  group('own number', () {
+    const numbers = ['+15612210454', '+13053062185', '+13053301236'];
+
+    test('only the number in use is us, whatever the server flagged', () {
+      // voice-api flags both account numbers on the thread-messages call.
+      expect(ownSelfFlags(numbers, [false, true, true], '+13053301236'),
+          [false, false, true]);
+      expect(ownSelfFlags(numbers, [false, true, true], '3053062185'),
+          [false, true, false]);
+    });
+
+    test('server flags are kept when our number is unknown or absent', () {
+      expect(ownSelfFlags(numbers, [false, true, null], ''),
+          [false, true, false]);
+      expect(ownSelfFlags(numbers, [false, true, true], '+19545550100'),
+          [false, true, true]);
+    });
+
+    test('two account numbers plus one outside number is a group', () {
+      final flags = ownSelfFlags(numbers, [false, true, true], numbers[2]);
+      final members = [
+        for (var i = 0; i < numbers.length; i++)
+          ChatMember(number: numbers[i], isSelf: flags[i]),
+      ];
+      expect(isGroupThread(members), isTrue);
+      expect(replyNumbers(members), ['+15612210454', '+13053062185']);
+    });
+  });
+
   group('reply-all', () {
     test('replyNumbers is everyone but us, deduped', () {
       expect(replyNumbers([me, ana, luis, const ChatMember(number: '3055550101')]),
           ['+13055550101', '+13055550102']);
       expect(replyNumbers([me, ana]), ['+13055550101']);
+    });
+
+    test('typed numbers go out in +1 form', () {
+      expect(
+        toNumbersListJson(['5612210454', '+13052048763'].map(toE164).toList()),
+        '{"list":["+15612210454","+13052048763"]}',
+      );
     });
 
     test('toNumbersListJson emits one entry per recipient', () {
