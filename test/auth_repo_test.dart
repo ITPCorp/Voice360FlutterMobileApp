@@ -14,6 +14,8 @@ import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/session_keeper.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:itp_voice/services/saved_login.dart';
 
 const _apiId = 'api-123';
 
@@ -92,8 +94,11 @@ void main() {
 
   setUp(() async {
     await prefs.clear();
+    FlutterSecureStorage.setMockInitialValues({});
     log = [];
   });
+
+  Future<SavedCredentials?> saved() => SavedLogin().read();
 
   Future<T> withHttp<T>(
       Future<T> Function() body, http.Response Function(http.Request) handler) {
@@ -106,25 +111,102 @@ void main() {
 
   AuthRepo repo() => AuthRepo(pushTokenProvider: () async => 'fcm-1');
 
-  group('legacy credentials', () {
-    test('purge removes the saved password and remember flag, keeps email',
+  group('Remember me (secure store)', () {
+    test('2.1.9 plain-text login moves to the secure store, session kept',
         () async {
       await prefs.setString(StorageKeys.EMAIL, 'user@example.com');
       await prefs.setString(StorageKeys.PASSWORD, 'hunter2');
       await prefs.setBool(StorageKeys.REMEMBER, true);
+      await prefs.setString(StorageKeys.REFRESH_TOKEN, 'tok-old');
 
-      await AuthRepo.purgeLegacyCredentials(prefs);
+      await SavedLogin().migrateLegacy(prefs);
 
+      final c = await saved();
+      expect(c?.email, 'user@example.com');
+      expect(c?.password, 'hunter2');
       expect(prefs.getString(StorageKeys.PASSWORD), isNull);
-      expect(prefs.getBool(StorageKeys.REMEMBER), isNull);
-      expect(prefs.getString(StorageKeys.EMAIL), 'user@example.com');
+      expect(prefs.getBool(StorageKeys.REMEMBER), isTrue);
+      expect(prefs.getString(StorageKeys.REFRESH_TOKEN), 'tok-old');
+    });
+
+    test('plain password without Remember me is deleted, nothing saved',
+        () async {
+      await prefs.setString(StorageKeys.EMAIL, 'user@example.com');
+      await prefs.setString(StorageKeys.PASSWORD, 'hunter2');
+      await prefs.setBool(StorageKeys.REMEMBER, false);
+      await SavedLogin().migrateLegacy(prefs);
+      expect(await saved(), isNull);
+      expect(prefs.getString(StorageKeys.PASSWORD), isNull);
+    });
+
+    test('login with Remember me saves it; without, forgets it', () async {
+      ok(req) => _json({'errors': false, 'result': _session('tok-A')});
+      await withHttp(() => repo().loginUser('user@example.com', 's3cret'), ok);
+      expect((await saved())?.password, 's3cret');
+      await withHttp(
+          () => repo().loginUser('user@example.com', 's3cret', remember: false), ok);
+      expect(await saved(), isNull);
+      expect(prefs.getBool(StorageKeys.REMEMBER), isFalse);
+    });
+
+    test('silent re-login with the saved login gets a new session', () async {
+      await SavedLogin().save('user@example.com', 's3cret');
+      final res = await withHttp(() => repo().signInWithSavedLogin(), (req) {
+        expect(jsonDecode(req.body)['password'], 's3cret');
+        return _json({'errors': false, 'result': _session('tok-B')});
+      });
+      expect(res, isTrue);
+      expect(prefs.getString(StorageKeys.REFRESH_TOKEN), 'tok-B');
+    });
+
+    test('silent re-login: nothing saved -> null, no request', () async {
+      final res = await withHttp(() => repo().signInWithSavedLogin(),
+          (req) => fail('no request expected'));
+      expect(res, isNull);
+      expect(log, isEmpty);
+    });
+
+    test('silent re-login: password changed (401) forgets the saved login',
+        () async {
+      await SavedLogin().save('user@example.com', 'old');
+      final res = await withHttp(() => repo().signInWithSavedLogin(),
+          (req) => _json({'errors': true, 'message': 'Invalid credentials'}, 401));
+      expect(res, 'Invalid credentials');
+      expect(await saved(), isNull);
+    });
+
+    test('silent re-login: server error keeps the saved login', () async {
+      await SavedLogin().save('user@example.com', 's3cret');
+      await withHttp(() => repo().signInWithSavedLogin(),
+          (req) => _json({'errors': true, 'message': 'oops'}, 500));
+      expect((await saved())?.password, 's3cret');
+    });
+
+    test('silent re-login, 2FA on: challenge only, code alone finishes it',
+        () async {
+      await SavedLogin().save('user@example.com', 's3cret');
+      final r = repo();
+      final res = await withHttp(() => r.signInWithSavedLogin(),
+          (req) => _json({
+                'errors': false,
+                'result': {'requires_mfa': true, 'temp_token': 'temp-9', 'expires_in': 600},
+              }));
+      expect(res, isA<MfaChallenge>());
+      final done = await withHttp(() => r.verifyMfaCode(res as MfaChallenge, '123456'),
+          (req) {
+        expect(req.url.toString(), Endpoints.VERIFY_2FA_URL);
+        expect(jsonDecode(req.body)['code'], '123456');
+        return _json({'errors': false, 'result': _session('tok-C')});
+      });
+      expect(done, isTrue);
+      expect(prefs.getString(StorageKeys.REFRESH_TOKEN), 'tok-C');
+      expect((await saved())?.password, 's3cret');
     });
   });
 
   group('password login', () {
-    test('without 2FA stores the token and the email, never the password',
+    test('without 2FA stores the token and the email; password only in the secure store',
         () async {
-      await prefs.setString(StorageKeys.PASSWORD, 'old-saved');
       final res = await withHttp(
           () => repo().loginUser('user@example.com', 's3cret'), (req) {
         expect(req.url.toString(), Endpoints.LOGIN_URL);
@@ -142,7 +224,8 @@ void main() {
       expect(prefs.getString(StorageKeys.PASSWORD), isNull);
       expect(prefs.getString(StorageKeys.API_ID), _apiId);
       expect(prefs.getString(StorageKeys.USER_ID), '55');
-      // Nothing persisted contains the password.
+      expect((await saved())?.password, 's3cret');
+      // Nothing in SharedPreferences contains the password.
       for (final k in prefs.getKeys()) {
         expect(prefs.get(k).toString().contains('s3cret'), isFalse, reason: k);
       }

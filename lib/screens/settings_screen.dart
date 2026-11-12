@@ -650,7 +650,10 @@ class SettingsScreen extends StatelessWidget {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: V360Colors.danger500),
             onPressed: () async {
-              await AuthRepo().logoutUser();
+              final repo = AuthRepo();
+              // Logging out on purpose also forgets the "Remember me" login.
+              await repo.forgetSavedLogin();
+              await repo.logoutUser();
               await AppCache.instance.clearAll();
               Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
             },

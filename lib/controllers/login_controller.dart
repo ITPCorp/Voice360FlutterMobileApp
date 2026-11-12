@@ -18,6 +18,7 @@ import 'package:itp_voice/repo/messages_repo.dart';
 import 'package:itp_voice/repo/voice_mails_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/numbers_service.dart';
+import 'package:itp_voice/services/saved_login.dart';
 import 'package:itp_voice/services/session_keeper.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
@@ -28,6 +29,11 @@ class LoginController extends GetxController {
   TextEditingController emailController = TextEditingController();
   TextEditingController codeController = TextEditingController();
   final _authRepo = AuthRepo();
+
+  /// "Remember me": keep the login in the secure store so the app signs in
+  /// again by itself when the session token expires (#53034). On by default,
+  /// as in 2.1.9.
+  RxBool isRemember = true.obs;
 
   RxBool showLogin = false.obs;
   RxBool isLoading = false.obs;
@@ -52,6 +58,7 @@ class LoginController extends GetxController {
       final res = await _authRepo.loginUser(
         emailController.text.trim(),
         passwordController.text,
+        remember: isRemember.value,
       );
 
       if (res == true) {
@@ -324,23 +331,39 @@ class LoginController extends GetxController {
   void onInit() {
     super.onInit();
     initializedd = false;
-    // Upgrade from a build that saved the password: delete it now.
-    SharedPreferences.getInstance()
-        .then(AuthRepo.purgeLegacyCredentials)
+    // 2.1.9 and older kept the "Remember me" password in plain
+    // SharedPreferences: move it into the secure store before anything uses it.
+    final migrated = SharedPreferences.getInstance()
+        .then((prefs) => SavedLogin().migrateLegacy(prefs))
         .catchError((_) {});
     Future.delayed(const Duration(seconds: 3), () async {
       SharedPreferences _prefs = await SharedPreferences.getInstance();
       await _applyStoredTheme(_prefs);
+      isRemember.value = _prefs.getBool(StorageKeys.REMEMBER) ?? true;
+      await migrated;
+      // A silent re-login during use needed a 2FA code: ask for the code only.
+      if (_showPendingChallenge()) return;
       String? token = _prefs.getString(StorageKeys.REFRESH_TOKEN);
       if (token == null || token.isEmpty) {
         _showLoginForm(_prefs);
         return;
       }
-      // Trade the stored token for a fresh one before going in. A 401 means
-      // it expired (24 h): back to the login form with the email filled in.
-      // A network error keeps the token and goes in as before.
+      // Trade the stored token for a fresh one before going in. If it has
+      // expired (24 h), sign in again with the "Remember me" login, as 2.1.9
+      // did. A network error keeps the token and goes in as before.
       final keeper = locator<SessionKeeper>();
-      final status = await keeper.refreshNow();
+      var status = await keeper.refreshNow();
+      if (status == RefreshStatus.expired) {
+        final res = await _authRepo.signInWithSavedLogin();
+        if (res == true) {
+          status = RefreshStatus.ok;
+        } else if (res is MfaChallenge) {
+          await AuthRepo.clearLocalSession();
+          AuthRepo.pendingChallenge = res;
+          _showPendingChallenge();
+          return;
+        }
+      }
       if (status == RefreshStatus.expired || status == RefreshStatus.noSession) {
         await AuthRepo.clearLocalSession();
         _showLoginForm(_prefs,
@@ -364,6 +387,19 @@ class LoginController extends GetxController {
       // navigates to any tab.
       _warmCachesInBackground();
     });
+  }
+
+  /// Shows the code step for a challenge raised by a silent re-login.
+  bool _showPendingChallenge() {
+    final pending = AuthRepo.pendingChallenge;
+    AuthRepo.pendingChallenge = null;
+    if (pending == null || pending.isExpired) return false;
+    emailController.text = pending.email;
+    codeController.clear();
+    mfaChallenge.value = pending;
+    errorMessage.value = '';
+    showLogin.value = true;
+    return true;
   }
 
   void _showLoginForm(SharedPreferences prefs, {String? message}) {

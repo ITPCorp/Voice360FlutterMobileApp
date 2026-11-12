@@ -14,6 +14,7 @@ import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/push_service.dart';
+import 'package:itp_voice/services/saved_login.dart';
 import 'package:itp_voice/services/session_keeper.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -137,23 +138,61 @@ class AuthRepo {
   /// tests do not touch Firebase.
   final Future<String?> Function() _pushToken;
 
-  AuthRepo({Future<String?> Function()? pushTokenProvider})
+  AuthRepo({Future<String?> Function()? pushTokenProvider, SavedLogin? savedLogin})
       : _pushToken = pushTokenProvider ??
-            (() => locator<PushService>().onLoginSuccess());
+            (() => locator<PushService>().onLoginSuccess()),
+        _savedLogin = savedLogin ?? SavedLogin();
 
-  /// Older builds saved the plaintext password (and a "remember me" flag that
-  /// only controlled that) in SharedPreferences. Delete both on every start.
-  /// The email stays: it only prefills the sign-in field.
-  static Future<void> purgeLegacyCredentials(SharedPreferences prefs) async {
-    await prefs.remove(StorageKeys.PASSWORD);
-    await prefs.remove(StorageKeys.REMEMBER);
+  /// "Remember me" login in the secure store (#53034).
+  final SavedLogin _savedLogin;
+
+  /// HTTP status of the last [loginUser] call (null = no answer).
+  int? lastLoginStatus;
+
+  /// A 2FA challenge raised by a silent re-login while the app was in use
+  /// (BaseRequester.handleUnauthorized). The login screen picks it up and
+  /// asks for the code only.
+  static MfaChallenge? pendingChallenge;
+
+  /// Keep or forget the login for "Remember me".
+  Future<void> _rememberLogin(String email, String? password, bool remember) async {
+    await SharedPreferencesMethod.storage.setBool(StorageKeys.REMEMBER, remember);
+    if (password == null) return;
+    try {
+      if (remember) {
+        await _savedLogin.save(email, password);
+      } else {
+        await _savedLogin.clear();
+      }
+    } catch (e) {
+      print('saved login not stored: $e');
+    }
   }
+
+  /// Sign in again with the "Remember me" login, the way 2.1.9 kept phones
+  /// signed in when the token expired.
+  ///
+  /// Returns null when nothing is saved, `true` when signed in, an
+  /// [MfaChallenge] when the contact has 2FA on (ask for the code only), or
+  /// a String error. A 401 (password changed) forgets the saved login.
+  Future<dynamic> signInWithSavedLogin() async {
+    final creds = await _savedLogin.read();
+    if (creds == null) return null;
+    final res = await loginUser(creds.email, creds.password, remember: true);
+    if (res is String && lastLoginStatus == 401) {
+      await _savedLogin.clear();
+    }
+    return res;
+  }
+
+  /// Forget the "Remember me" login (explicit log out).
+  Future<void> forgetSavedLogin() => _savedLogin.clear();
 
   /// Password sign-in, step 1.
   ///
   /// Returns `true` when signed in, an [MfaChallenge] when the contact has
   /// two-factor on (call [verifyMfaCode] next), or a String error message.
-  Future<dynamic> loginUser(String email, String password) async {
+  Future<dynamic> loginUser(String email, String password, {bool remember = true}) async {
     final Map<String, dynamic> loginBody =
         LoginRequestModel(username: email, password: password).toMap();
     // Push registration: request OS permission, fetch current FCM token, and
@@ -163,6 +202,7 @@ class AuthRepo {
       loginBody['mobile_device_id'] = pushToken;
     }
     final res = await _send('POST', Endpoints.LOGIN_URL, body: loginBody);
+    lastLoginStatus = res?.status;
     if (res == null) {
       return "Couldn't reach the server. Check your connection and try again.";
     }
@@ -175,10 +215,12 @@ class AuthRepo {
     }
     final result = data['result'];
     if (result is! Map) return 'Something went wrong';
-    final challenge = MfaChallenge.fromResult(
-        Map<String, dynamic>.from(result), email: email, pushToken: pushToken);
+    final challenge = MfaChallenge.fromResult(Map<String, dynamic>.from(result),
+        email: email, pushToken: pushToken, password: password, remember: remember);
     if (challenge != null) return challenge;
-    return _finishSession(Map<String, dynamic>.from(result), email: email);
+    final done = await _finishSession(Map<String, dynamic>.from(result), email: email);
+    if (done == true) await _rememberLogin(email, password, remember);
+    return done;
   }
 
   /// Password sign-in, step 2 (only when [loginUser] returned a challenge).
@@ -207,7 +249,11 @@ class AuthRepo {
       if (result is! Map) return const AuthFailure('Something went wrong');
       final done =
           await _finishSession(Map<String, dynamic>.from(result), email: challenge.email);
-      return done == true ? true : AuthFailure(done.toString());
+      if (done == true) {
+        await _rememberLogin(challenge.email, challenge.password, challenge.remember);
+        return true;
+      }
+      return AuthFailure(done.toString());
     }
     if (res.status == 429) {
       return AuthFailure(_message(data) ?? 'Too many attempts. Try again later.');
@@ -331,7 +377,6 @@ class AuthRepo {
         return userId is String ? userId : 'Something went wrong';
       }
       await SharedPreferencesMethod.storage.setString(StorageKeys.ACCESS_TOKEN, access);
-      await purgeLegacyCredentials(SharedPreferencesMethod.storage);
       if (email != null && email.isNotEmpty) {
         await SharedPreferencesMethod.storage.setString(StorageKeys.EMAIL, email);
       } else {
@@ -586,19 +631,26 @@ class MfaChallenge {
   /// FCM token from the password step, sent again on verify.
   final String? pushToken;
 
+  /// Password from the password step, kept in memory only, so "Remember me"
+  /// can save it once the code is accepted.
+  final String? password;
+  final bool remember;
+
   MfaChallenge({
     required this.tempToken,
     required this.methods,
     required this.expiresAt,
     required this.email,
     this.pushToken,
+    this.password,
+    this.remember = true,
   });
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
   /// Null unless [result] is a `requires_mfa` answer from `/auth/login`.
   static MfaChallenge? fromResult(Map<String, dynamic> result,
-      {required String email, String? pushToken}) {
+      {required String email, String? pushToken, String? password, bool remember = true}) {
     if (result['requires_mfa'] != true) return null;
     final temp = result['temp_token'];
     if (temp is! String || temp.isEmpty) return null;
@@ -614,6 +666,8 @@ class MfaChallenge {
       expiresAt: DateTime.now().add(Duration(seconds: seconds)),
       email: email,
       pushToken: pushToken,
+      password: password,
+      remember: remember,
     );
   }
 }

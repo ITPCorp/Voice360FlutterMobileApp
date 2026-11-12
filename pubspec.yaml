@@ -79,6 +79,7 @@ dependencies:
   url_launcher_android: ">=6.3.0 <6.3.15"
   flutter_web_auth_2: ^4.1.0
   package_info_plus: ^8.0.2
+  flutter_secure_storage: ^10.3.4
   # flutter_pjsip: ^0.0.2-dev.2
 
 dev_dependencies:

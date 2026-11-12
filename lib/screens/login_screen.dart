@@ -225,6 +225,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: V360Spacing.s3),
+                  // Stay signed in: the login is kept in the phone's secure
+                  // store and used again when the session expires (#53034).
+                  Obx(() => Row(
+                        children: [
+                          Checkbox(
+                            value: con.isRemember.value,
+                            onChanged: (v) => con.isRemember.value = v ?? false,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(V360Radius.base),
+                            ),
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          const SizedBox(width: V360Spacing.s1),
+                          Text('Remember me', style: Theme.of(context).textTheme.bodyMedium),
+                        ],
+                      )),
                   Obx(() {
                     final err = con.errorMessage.value;
                     if (err.isEmpty) return const SizedBox.shrink();

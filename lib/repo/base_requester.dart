@@ -10,6 +10,7 @@ import 'package:itp_voice/repo/auth_repo.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/numbers_service.dart';
+import 'package:itp_voice/services/session_keeper.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_loader.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
@@ -25,21 +26,44 @@ class BaseRequester {
 
   /// Centralized handler for 401 responses (and for a session refresh that
   /// the server refused). Idempotent, safe to call from any HTTP verb's
-  /// response branch. The login screen prefills the saved email; the user
-  /// types the password again. No password is stored on the device.
+  /// response branch.
+  ///
+  /// "Remember me" (#53034): first sign in again with the saved login, as
+  /// 2.1.9 did, and stay where the user is. A 2FA contact gets the code step
+  /// only. Without a saved login (or if it no longer works) the user is
+  /// logged out and the login screen prefills the email.
   Future<void> handleUnauthorized() async {
     if (_unauthorizedHandled) return;
     _unauthorizedHandled = true;
     try {
-      await _authRepo.logoutUser();
-    } catch (_) {/* logout request can itself fail; ignore */}
-    Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
-    CustomToast.showToast('Session expired, please log in again', true);
-    // Reset the guard after the user lands on the login screen so a future
-    // session can also trigger the handler.
-    Future.delayed(const Duration(seconds: 2), () {
-      _unauthorizedHandled = false;
-    });
+      dynamic relogin;
+      try {
+        relogin = await _authRepo.signInWithSavedLogin();
+      } catch (_) {}
+      if (relogin == true) {
+        try {
+          locator<SessionKeeper>().start();
+        } catch (_) {}
+        return;
+      }
+      try {
+        await _authRepo.logoutUser();
+      } catch (_) {/* logout request can itself fail; ignore */}
+      if (relogin is MfaChallenge) {
+        AuthRepo.pendingChallenge = relogin;
+        Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
+        CustomToast.showToast('Enter the code from your authenticator app to stay signed in', true);
+        return;
+      }
+      Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
+      CustomToast.showToast('Session expired, please log in again', true);
+    } finally {
+      // Reset the guard after the user lands on the login screen so a future
+      // session can also trigger the handler.
+      Future.delayed(const Duration(seconds: 2), () {
+        _unauthorizedHandled = false;
+      });
+    }
   }
 
   // late String baseURL = "https://gym.vidseries.com/";
