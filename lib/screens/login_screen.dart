@@ -40,9 +40,20 @@ class _LoginScreenState extends State<LoginScreen> {
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: cs.surface,
-        body: Obx(
-          () => con.showLogin.value ? _buildLogin(context) : _buildSplash(context),
-        ),
+        body: Obx(() {
+          if (!con.showLogin.value) return _buildSplash(context);
+          if (con.mfaChallenge.value != null) {
+            // Android back on the code step returns to the password step.
+            return PopScope(
+              canPop: false,
+              onPopInvokedWithResult: (didPop, _) {
+                if (!didPop) con.cancelMfa();
+              },
+              child: _buildCodeStep(context),
+            );
+          }
+          return _buildLogin(context);
+        }),
       ),
     );
   }
@@ -126,117 +137,239 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 440),
+            child: AutofillGroup(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Image.asset(
+                      'assets/images/v360_logo_purp.png',
+                      height: 64,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [_kBrandPurple600, _kBrandViolet600],
+                          ),
+                          borderRadius: BorderRadius.circular(V360Radius.xl),
+                        ),
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.phone_in_talk_rounded,
+                            color: Colors.white, size: 36),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: V360Spacing.s6),
+                  Center(
+                    child: Text(
+                      'Welcome Back',
+                      style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  const SizedBox(height: V360Spacing.s1),
+                  Center(
+                    child: Text(
+                      'Sign in to your Voice360 account to continue',
+                      style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: V360Spacing.s8),
+                  _label(context, 'Email'),
+                  const SizedBox(height: V360Spacing.s2),
+                  TextField(
+                    controller: con.emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    autofillHints: const [AutofillHints.username, AutofillHints.email],
+                    autocorrect: false,
+                    textInputAction: TextInputAction.next,
+                    onChanged: (_) {
+                      if (con.errorMessage.value.isNotEmpty) {
+                        con.errorMessage.value = '';
+                      }
+                    },
+                    decoration: const InputDecoration(
+                      hintText: 'you@company.com',
+                      prefixIcon: Icon(Icons.alternate_email_rounded, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: V360Spacing.s5),
+                  _label(context, 'Password'),
+                  const SizedBox(height: V360Spacing.s2),
+                  TextField(
+                    controller: con.passwordController,
+                    obscureText: _obscure,
+                    autofillHints: const [AutofillHints.password],
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => con.login(),
+                    onChanged: (_) {
+                      if (con.errorMessage.value.isNotEmpty) {
+                        con.errorMessage.value = '';
+                      }
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'Enter your password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                        ),
+                        onPressed: () => setState(() => _obscure = !_obscure),
+                      ),
+                    ),
+                  ),
+                  Obx(() {
+                    final err = con.errorMessage.value;
+                    if (err.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: V360Spacing.s3),
+                      child: _ErrorBanner(message: err),
+                    );
+                  }),
+                  const SizedBox(height: V360Spacing.s5),
+                  Obx(() => _PrimaryButton(
+                        label: con.isLoading.value ? 'Signing In…' : 'Sign In',
+                        loading: con.isLoading.value,
+                        onPressed: con.isLoading.value ? null : con.login,
+                      )),
+                  const SizedBox(height: V360Spacing.s4),
+                  _OrDivider(),
+                  const SizedBox(height: V360Spacing.s4),
+                  Obx(() => _SsoButton(
+                        label: 'Continue with Google',
+                        icon: _googleIcon(),
+                        onPressed: con.isLoading.value
+                            ? null
+                            : () => con.loginWithSso('google'),
+                      )),
+                  const SizedBox(height: V360Spacing.s3),
+                  Obx(() => _SsoButton(
+                        label: 'Continue with Microsoft',
+                        icon: _microsoftIcon(),
+                        onPressed: con.isLoading.value
+                            ? null
+                            : () => con.loginWithSso('microsoft'),
+                      )),
+                  const SizedBox(height: V360Spacing.s5),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _FooterLink(
+                        label: 'Forgot Password?',
+                        onTap: () => _launchWeb('/reset-pw'),
+                      ),
+                      const SizedBox(width: V360Spacing.s4),
+                      _FooterLink(
+                        label: 'Create Account',
+                        onTap: () => _launchWeb('/Sign-Up'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: V360Spacing.s6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.lock_outline_rounded,
+                          size: 14, color: cs.onSurfaceVariant),
+                      const SizedBox(width: V360Spacing.s1),
+                      Text(
+                        'Secured by ITP 360',
+                        style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Second step for contacts with two-factor on: the 6-digit code from the
+  /// authenticator app. Submits on the 6th digit.
+  Widget _buildCodeStep(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(
+            horizontal: V360Spacing.s6,
+            vertical: V360Spacing.s8,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Center(
-                  child: Image.asset(
-                    'assets/images/v360_logo_purp.png',
-                    height: 64,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 72,
-                      height: 72,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [_kBrandPurple600, _kBrandViolet600],
-                        ),
-                        borderRadius: BorderRadius.circular(V360Radius.xl),
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [_kBrandPurple600, _kBrandViolet600],
                       ),
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.phone_in_talk_rounded,
-                          color: Colors.white, size: 36),
+                      borderRadius: BorderRadius.circular(V360Radius.xl),
                     ),
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.shield_outlined,
+                        color: Colors.white, size: 36),
                   ),
                 ),
                 const SizedBox(height: V360Spacing.s6),
                 Center(
                   child: Text(
-                    'Welcome Back',
+                    'Enter your code',
                     style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
                 const SizedBox(height: V360Spacing.s1),
                 Center(
                   child: Text(
-                    'Sign in to your Voice360 account to continue',
+                    'Open your authenticator app and enter the 6-digit code for Voice360.',
                     style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                     textAlign: TextAlign.center,
                   ),
                 ),
                 const SizedBox(height: V360Spacing.s8),
-                _label(context, 'Email'),
+                _label(context, 'Code'),
                 const SizedBox(height: V360Spacing.s2),
                 TextField(
-                  controller: con.emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  autocorrect: false,
-                  textInputAction: TextInputAction.next,
-                  onChanged: (_) {
-                    if (con.errorMessage.value.isNotEmpty) {
-                      con.errorMessage.value = '';
-                    }
-                  },
-                  decoration: const InputDecoration(
-                    hintText: 'you@company.com',
-                    prefixIcon: Icon(Icons.alternate_email_rounded, size: 20),
-                  ),
-                ),
-                const SizedBox(height: V360Spacing.s5),
-                _label(context, 'Password'),
-                const SizedBox(height: V360Spacing.s2),
-                TextField(
-                  controller: con.passwordController,
-                  obscureText: _obscure,
+                  key: const Key('mfa_code_field'),
+                  controller: con.codeController,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => con.login(),
-                  onChanged: (_) {
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(6),
+                  ],
+                  textAlign: TextAlign.center,
+                  style: tt.headlineSmall?.copyWith(
+                    letterSpacing: 8,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  onChanged: (v) {
                     if (con.errorMessage.value.isNotEmpty) {
                       con.errorMessage.value = '';
                     }
+                    if (v.length == 6) con.verifyCode();
                   },
-                  decoration: InputDecoration(
-                    hintText: 'Enter your password',
-                    prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscure
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        size: 20,
-                      ),
-                      onPressed: () => setState(() => _obscure = !_obscure),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: V360Spacing.s3),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Obx(() => Row(
-                          children: [
-                            Checkbox(
-                              value: con.isRemember.value,
-                              onChanged: (v) =>
-                                  con.isRemember.value = v ?? false,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(V360Radius.base),
-                              ),
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
-                              visualDensity: VisualDensity.compact,
-                            ),
-                            const SizedBox(width: V360Spacing.s1),
-                            Text(
-                              'Remember me',
-                              style: tt.bodyMedium,
-                            ),
-                          ],
-                        )),
-                  ],
+                  onSubmitted: (_) => con.verifyCode(),
+                  decoration: const InputDecoration(hintText: '000000'),
                 ),
                 Obx(() {
                   final err = con.errorMessage.value;
@@ -248,55 +381,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 }),
                 const SizedBox(height: V360Spacing.s5),
                 Obx(() => _PrimaryButton(
-                      label: con.isLoading.value ? 'Signing In…' : 'Sign In',
+                      label: con.isLoading.value ? 'Verifying…' : 'Verify',
                       loading: con.isLoading.value,
-                      onPressed: con.isLoading.value ? null : con.login,
-                    )),
-                const SizedBox(height: V360Spacing.s4),
-                _OrDivider(),
-                const SizedBox(height: V360Spacing.s4),
-                Obx(() => _SsoButton(
-                      label: 'Continue with Google',
-                      icon: _googleIcon(),
-                      onPressed: con.isLoading.value
-                          ? null
-                          : () => con.loginWithSso('google'),
-                    )),
-                const SizedBox(height: V360Spacing.s3),
-                Obx(() => _SsoButton(
-                      label: 'Continue with Microsoft',
-                      icon: _microsoftIcon(),
-                      onPressed: con.isLoading.value
-                          ? null
-                          : () => con.loginWithSso('microsoft'),
+                      onPressed: con.isLoading.value ? null : con.verifyCode,
                     )),
                 const SizedBox(height: V360Spacing.s5),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _FooterLink(
-                      label: 'Forgot Password?',
-                      onTap: () => _launchWeb('/reset-pw'),
-                    ),
-                    const SizedBox(width: V360Spacing.s4),
-                    _FooterLink(
-                      label: 'Create Account',
-                      onTap: () => _launchWeb('/Sign-Up'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: V360Spacing.s6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.lock_outline_rounded,
-                        size: 14, color: cs.onSurfaceVariant),
-                    const SizedBox(width: V360Spacing.s1),
-                    Text(
-                      'Secured by ITP 360',
-                      style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
-                    ),
-                  ],
+                Center(
+                  child: Obx(() => _FooterLink(
+                        label: 'Back to sign in',
+                        onTap: con.isLoading.value ? () {} : con.cancelMfa,
+                      )),
                 ),
               ],
             ),

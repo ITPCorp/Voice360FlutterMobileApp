@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:itp_voice/main.dart' show firebaseReady;
+import 'package:http/http.dart' as http;
 import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/models/get_devices_reponse_model/get_devices_reponse_model.dart';
-import 'package:itp_voice/models/login_reponse_model/login_reponse_model.dart';
+import 'package:itp_voice/models/login_reponse_model/app_user.dart';
 import 'package:itp_voice/models/login_request_model.dart';
 import 'package:itp_voice/models/services_response_model/service.dart';
 import 'package:itp_voice/models/services_response_model/services_response_model.dart';
@@ -15,7 +14,9 @@ import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/push_service.dart';
+import 'package:itp_voice/services/session_keeper.dart';
 import 'package:itp_voice/storage_keys.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 class AuthRepo {
@@ -132,151 +133,112 @@ class AuthRepo {
 
 ///////////
 
-  loginUser(String email, String password, bool rememberMe) async {
-    LoginRequestModel body = LoginRequestModel(username: email, password: password);
-    Map loginBody = body.toMap();
+  /// Builds the FCM token sent as `mobile_device_id`. Injectable so unit
+  /// tests do not touch Firebase.
+  final Future<String?> Function() _pushToken;
+
+  AuthRepo({Future<String?> Function()? pushTokenProvider})
+      : _pushToken = pushTokenProvider ??
+            (() => locator<PushService>().onLoginSuccess());
+
+  /// Older builds saved the plaintext password (and a "remember me" flag that
+  /// only controlled that) in SharedPreferences. Delete both on every start.
+  /// The email stays: it only prefills the sign-in field.
+  static Future<void> purgeLegacyCredentials(SharedPreferences prefs) async {
+    await prefs.remove(StorageKeys.PASSWORD);
+    await prefs.remove(StorageKeys.REMEMBER);
+  }
+
+  /// Password sign-in, step 1.
+  ///
+  /// Returns `true` when signed in, an [MfaChallenge] when the contact has
+  /// two-factor on (call [verifyMfaCode] next), or a String error message.
+  Future<dynamic> loginUser(String email, String password) async {
+    final Map<String, dynamic> loginBody =
+        LoginRequestModel(username: email, password: password).toMap();
     // Push registration: request OS permission, fetch current FCM token, and
     // send it to the backend so it can target this device for SMS/call pushes.
-    final pushToken = await locator<PushService>().onLoginSuccess();
-    if (pushToken != null && pushToken.isNotEmpty) {
+    final pushToken = await _safePushToken();
+    if (pushToken != null) {
       loginBody['mobile_device_id'] = pushToken;
     }
-    print('DEVICE TOKEN: ' + (loginBody['mobile_device_id']?.toString() ?? 'null'));
-    final apiResponse = await BaseRequesterMethods.baseRequester
-        .basePostAPI(Endpoints.LOGIN_URL, jsonEncode(loginBody), protected: false);
-    print("--------api response---------");
-    print(apiResponse.toString());
-    if (apiResponse != null) {
-      try {
-        if (apiResponse['errors']) {
-          return apiResponse['message'];
-        } else {
-          print("--------api response-----1----");
-          LoginReponseModel response = LoginReponseModel.fromMap(apiResponse);
-          SharedPreferencesMethod.setString(StorageKeys.REFRESH_TOKEN, response.result!.refreshToken);
-          SharedPreferencesMethod.setString(StorageKeys.TIME_ZONE, response.result!.timeZone);
-          final devicesApiResponse = await getDevices();
-          if (devicesApiResponse.runtimeType == String) {
-            print("--------api response-----2----");
-            SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-            return devicesApiResponse;
-          } else if (devicesApiResponse) {
-            print("--------api response-----3----");
-            var userIdApiResponse = await getUserID();
-            if (userIdApiResponse.runtimeType == String) {
-              SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-
-              return userIdApiResponse;
-            }
-            if (userIdApiResponse) {
-              print("--------api response-----4----");
-              SharedPreferencesMethod.setString(StorageKeys.ACCESS_TOKEN, response.result!.accessToken);
-              SharedPreferencesMethod.setbool(StorageKeys.REMEMBER, rememberMe);
-
-              if (rememberMe) {
-                print("--------api response-----5----");
-                SharedPreferencesMethod.setString(StorageKeys.EMAIL, email);
-                SharedPreferencesMethod.setString(StorageKeys.PASSWORD, password);
-              } else {
-                print("--------api response-----6----");
-                SharedPreferencesMethod.storage.remove(StorageKeys.EMAIL);
-                SharedPreferencesMethod.storage.remove(StorageKeys.PASSWORD);
-              }
-
-              SharedPreferencesMethod.setString(StorageKeys.REFRESH_TOKEN, response.result!.refreshToken);
-              SharedPreferencesMethod.setString(StorageKeys.APPUSER_DATA, json.encode(response.result!.toMap()));
-              SharedPreferencesMethod.getUserData();
-              return true;
-              // SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-            } else {
-              return "Something went wrong";
-            }
-          }
-        }
-      } catch (e) {
-        print(e.toString());
-        // SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-
-        return "Something went wrong";
-      }
+    final res = await _send('POST', Endpoints.LOGIN_URL, body: loginBody);
+    if (res == null) {
+      return "Couldn't reach the server. Check your connection and try again.";
     }
+    final data = res.body;
+    if (res.status == 429) {
+      return _message(data) ?? 'Too many login attempts. Please try again later.';
+    }
+    if (res.status != 200 || data == null || data['errors'] == true) {
+      return _message(data) ?? 'Invalid credentials';
+    }
+    final result = data['result'];
+    if (result is! Map) return 'Something went wrong';
+    final challenge = MfaChallenge.fromResult(
+        Map<String, dynamic>.from(result), email: email, pushToken: pushToken);
+    if (challenge != null) return challenge;
+    return _finishSession(Map<String, dynamic>.from(result), email: email);
+  }
+
+  /// Password sign-in, step 2 (only when [loginUser] returned a challenge).
+  ///
+  /// Returns `true` when signed in, otherwise an [AuthFailure]. When
+  /// [AuthFailure.restart] is set the temp token is gone and the user has to
+  /// enter the password again.
+  Future<dynamic> verifyMfaCode(MfaChallenge challenge, String code) async {
+    if (challenge.isExpired) {
+      return const AuthFailure('Invalid or expired sign-in. Start again.',
+          restart: true);
+    }
+    final body = <String, dynamic>{'code': code};
+    if (challenge.pushToken != null) {
+      body['mobile_device_id'] = challenge.pushToken;
+    }
+    final res = await _send('POST', Endpoints.VERIFY_2FA_URL,
+        body: body, bearer: challenge.tempToken);
+    if (res == null) {
+      return const AuthFailure(
+          "Couldn't reach the server. Check your connection and try again.");
+    }
+    final data = res.body;
+    if (res.status == 200 && data != null && data['errors'] != true) {
+      final result = data['result'];
+      if (result is! Map) return const AuthFailure('Something went wrong');
+      final done =
+          await _finishSession(Map<String, dynamic>.from(result), email: challenge.email);
+      return done == true ? true : AuthFailure(done.toString());
+    }
+    if (res.status == 429) {
+      return AuthFailure(_message(data) ?? 'Too many attempts. Try again later.');
+    }
+    final message = _message(data) ?? 'Invalid code';
+    // "Invalid or expired sign-in. Start again." means the temp token is dead.
+    final restart = message.toLowerCase().contains('start again');
+    return AuthFailure(message, restart: restart);
   }
 
   /// Sign in via an SSO bearer token returned from the OAuth callback URL
   /// (`itpvoice://login?token=<jwt>`).
   ///
-  /// The token is a portal-scoped JWT. Use it to call `/portal/crm/auth/refresh`,
-  /// which returns the full `LoginReponseModel` (access + refresh + user data).
-  /// From there we run the same chain as email/password login.
+  /// The token is a portal-scoped JWT. Trade it at `/portal/crm/auth/refresh`
+  /// (the same call [refreshSession] makes), which returns the full login
+  /// body. From there we run the same chain as email/password login.
   Future<dynamic> loginWithSsoToken(String ssoToken) async {
     try {
-      // Pre-seed REFRESH_TOKEN so BaseRequester picks it up for the
-      // Authorization header on the refresh call below.
-      await SharedPreferencesMethod.setString(StorageKeys.REFRESH_TOKEN, ssoToken);
-
-      // Get an FCM token to pass to the backend so this device can receive
-      // push notifications. Refresh endpoint accepts `?mobile_device_id=`.
-      final pushToken = await locator<PushService>().onLoginSuccess();
-      var refreshUrl = Endpoints.REFRESH_TOKEN_URL;
-      if (pushToken != null && pushToken.isNotEmpty) {
-        refreshUrl = '$refreshUrl?mobile_device_id=$pushToken';
-      }
-      final apiResponse =
-          await BaseRequesterMethods.baseRequester.baseGetAPI(refreshUrl);
-      if (apiResponse == null) {
-        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+      final pushToken = await _safePushToken();
+      final res = await _requestRefresh(ssoToken, pushToken: pushToken);
+      if (res == null) {
         return 'Could not complete sign-in. Please try again.';
       }
-      if (apiResponse['errors'] == true) {
-        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-        return apiResponse['message'] ?? 'Sign-in failed.';
+      final data = res.body;
+      if (res.status != 200 || data == null || data['errors'] == true) {
+        return _message(data) ?? 'Sign-in failed.';
       }
-
-      // The refresh endpoint returns the user object at the top level
-      // (not under `result`). Wrap it so AppUser.fromMap below can consume it.
-      final result = apiResponse['result'] ?? apiResponse;
-      LoginReponseModel response =
-          LoginReponseModel.fromMap({'result': result, 'errors': false, 'message': 'ok'});
-
-      if (response.result?.refreshToken == null ||
-          response.result?.accessToken == null) {
-        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-        return 'Sign-in response was missing tokens.';
-      }
-
-      SharedPreferencesMethod.setString(
-          StorageKeys.REFRESH_TOKEN, response.result!.refreshToken);
-      if (response.result!.timeZone != null) {
-        SharedPreferencesMethod.setString(
-            StorageKeys.TIME_ZONE, response.result!.timeZone);
-      }
-
-      final devicesApiResponse = await getDevices();
-      if (devicesApiResponse.runtimeType == String) {
-        SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-        return devicesApiResponse;
-      }
-      if (devicesApiResponse == true) {
-        final userIdApiResponse = await getUserID();
-        if (userIdApiResponse.runtimeType == String) {
-          SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-          return userIdApiResponse;
-        }
-        if (userIdApiResponse == true) {
-          SharedPreferencesMethod.setString(
-              StorageKeys.ACCESS_TOKEN, response.result!.accessToken);
-          // SSO users always go through the OAuth flow each launch — no
-          // saved credentials to remember.
-          SharedPreferencesMethod.setbool(StorageKeys.REMEMBER, false);
-          SharedPreferencesMethod.storage.remove(StorageKeys.EMAIL);
-          SharedPreferencesMethod.storage.remove(StorageKeys.PASSWORD);
-          SharedPreferencesMethod.setString(
-              StorageKeys.APPUSER_DATA, json.encode(response.result!.toMap()));
-          SharedPreferencesMethod.getUserData();
-          return true;
-        }
-      }
-      return 'Could not complete sign-in. Please try again.';
+      // Tolerate the user object at the top level as well as under `result`.
+      final result = data['result'] ?? data;
+      if (result is! Map) return 'Could not complete sign-in. Please try again.';
+      return await _finishSession(Map<String, dynamic>.from(result), email: null);
     } catch (e) {
       print('SSO login error: $e');
       await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
@@ -284,57 +246,160 @@ class AuthRepo {
     }
   }
 
-  reLoginUser() async {
-    final email = SharedPreferencesMethod.getString(StorageKeys.EMAIL);
-    final password = SharedPreferencesMethod.getString(StorageKeys.PASSWORD);
-    if (email == null || password == null) {
-      return 'Please sign in again.';
+  /// Trade the stored session token for a fresh one (tokens last 24 h, the
+  /// server refreshes any token that has not expired yet).
+  ///
+  /// [RefreshStatus.expired] means the server said 401: the session is over
+  /// and the user must sign in. [RefreshStatus.failed] is a network or server
+  /// error; the stored token is kept and the caller retries later.
+  Future<RefreshStatus> refreshSession() async {
+    final sent = SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
+    if (sent == null || sent.isEmpty) return RefreshStatus.noSession;
+    final res = await _requestRefresh(sent);
+    // A logout or a new login while the call was in flight wins.
+    final current = SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
+    if (current != sent) {
+      return (current == null || current.isEmpty)
+          ? RefreshStatus.noSession
+          : RefreshStatus.ok;
     }
-    LoginRequestModel body = LoginRequestModel(username: email, password: password);
-    final apiResponse =
-        await BaseRequesterMethods.baseRequester.basePostAPI(Endpoints.LOGIN_URL, body.toJson(), protected: false);
-    if (apiResponse != null) {
-      try {
-        if (apiResponse['errors']) {
-          return apiResponse['message'];
-        } else {
-          LoginReponseModel response = LoginReponseModel.fromMap(apiResponse);
+    if (res == null) return RefreshStatus.failed;
+    if (res.status == 401) return RefreshStatus.expired;
+    final data = res.body;
+    if (res.status != 200 || data == null || data['errors'] == true) {
+      return RefreshStatus.failed;
+    }
+    final result = data['result'];
+    if (result is! Map) return RefreshStatus.failed;
+    final user = AppUser.fromMap(Map<String, dynamic>.from(result));
+    final access = user.accessToken;
+    final refresh = user.refreshToken;
+    if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
+      return RefreshStatus.failed;
+    }
+    await SharedPreferencesMethod.storage.setString(StorageKeys.REFRESH_TOKEN, refresh);
+    await SharedPreferencesMethod.storage.setString(StorageKeys.ACCESS_TOKEN, access);
+    if (user.timeZone != null) {
+      await SharedPreferencesMethod.storage.setString(StorageKeys.TIME_ZONE, user.timeZone!);
+    }
+    await SharedPreferencesMethod.storage
+        .setString(StorageKeys.APPUSER_DATA, json.encode(user.toMap()));
+    return RefreshStatus.ok;
+  }
 
-          SharedPreferencesMethod.setString(StorageKeys.REFRESH_TOKEN, response.result!.refreshToken);
+  /// Drop the local session without calling the server (used when the
+  /// server already said the token is dead). Keeps the email for prefill.
+  static Future<void> clearLocalSession() async {
+    await SharedPreferencesMethod.storage.remove(StorageKeys.ACCESS_TOKEN);
+    await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+    await SharedPreferencesMethod.storage.remove(StorageKeys.APPUSER_DATA);
+    await SharedPreferencesMethod.storage.remove(StorageKeys.TIME_ZONE);
+  }
 
-          SharedPreferencesMethod.setString(StorageKeys.ACCESS_TOKEN, response.result!.accessToken);
-          return true;
-          // final devicesApiResponse = await getDevices();
-          // if (devicesApiResponse.runtimeType == String) {
-          //   SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
-          //   return devicesApiResponse;
-          // } else if (devicesApiResponse) {
-          // SharedPreferencesMethod.setbool(StorageKeys.REMEMBER, rememberMe);
+  Future<_AuthResponse?> _requestRefresh(String bearer, {String? pushToken}) {
+    var url = Endpoints.REFRESH_TOKEN_URL;
+    if (pushToken != null && pushToken.isNotEmpty) {
+      url = '$url?mobile_device_id=${Uri.encodeQueryComponent(pushToken)}';
+    }
+    return _send('GET', url, bearer: bearer);
+  }
 
-          // if (rememberMe) {
-          //   SharedPreferencesMethod.setString(StorageKeys.EMAIL, email);
-          //   SharedPreferencesMethod.setString(StorageKeys.PASSWORD, password);
-          // } else {
-          //   SharedPreferencesMethod.storage.remove(StorageKeys.EMAIL);
-          //   SharedPreferencesMethod.storage.remove(StorageKeys.PASSWORD);
-          // }
-
-          //   SharedPreferencesMethod.setString(
-          //       StorageKeys.REFRESH_TOKEN, response.result!.refreshToken);
-          //   SharedPreferencesMethod.setString(StorageKeys.APPUSER_DATA,
-          //       json.encode(response.result!.toMap()));
-          //   SharedPreferencesMethod.getUserData();
-          //   return true;
-          // }
-        }
-      } catch (e) {
-        print(e.toString());
-        return "Something went wrong";
+  /// Shared tail of every sign-in (password, password + code, SSO): store the
+  /// session, then load services, realm, device and user id.
+  Future<dynamic> _finishSession(Map<String, dynamic> result,
+      {required String? email}) async {
+    try {
+      final user = AppUser.fromMap(result);
+      final access = user.accessToken;
+      final refresh = user.refreshToken;
+      if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
+        return 'Sign-in response was missing tokens.';
       }
+      // BaseRequester sends REFRESH_TOKEN as the bearer, so the calls below need it.
+      await SharedPreferencesMethod.storage.setString(StorageKeys.REFRESH_TOKEN, refresh);
+      if (user.timeZone != null) {
+        await SharedPreferencesMethod.storage.setString(StorageKeys.TIME_ZONE, user.timeZone!);
+      }
+      final devices = await getDevices();
+      if (devices != true) {
+        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+        return devices is String ? devices : 'Something went wrong';
+      }
+      final userId = await getUserID();
+      if (userId != true) {
+        await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+        return userId is String ? userId : 'Something went wrong';
+      }
+      await SharedPreferencesMethod.storage.setString(StorageKeys.ACCESS_TOKEN, access);
+      await purgeLegacyCredentials(SharedPreferencesMethod.storage);
+      if (email != null && email.isNotEmpty) {
+        await SharedPreferencesMethod.storage.setString(StorageKeys.EMAIL, email);
+      } else {
+        await SharedPreferencesMethod.storage.remove(StorageKeys.EMAIL);
+      }
+      await SharedPreferencesMethod.storage
+          .setString(StorageKeys.APPUSER_DATA, json.encode(user.toMap()));
+      SharedPreferencesMethod.getUserData();
+      return true;
+    } catch (e) {
+      print('finish sign-in failed: $e');
+      await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
+      return 'Something went wrong';
     }
   }
 
+  Future<String?> _safePushToken() async {
+    try {
+      final t = await _pushToken();
+      return (t == null || t.isEmpty) ? null : t;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Plain HTTP for the auth calls. BaseRequester is not used here because it
+  /// turns any 401 into "session expired, log out", and these calls need the
+  /// status and message (wrong password, wrong code, 429) themselves.
+  /// Returns null on a network error.
+  static Future<_AuthResponse?> _send(String method, String url,
+      {Map<String, dynamic>? body, String? bearer}) async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json; charset=UTF-8',
+      if (bearer != null) 'Authorization': 'Bearer $bearer',
+    };
+    try {
+      final uri = Uri.parse(url);
+      final http.Response r = method == 'GET'
+          ? await http.get(uri, headers: headers).timeout(_authTimeout)
+          : await http
+              .post(uri, headers: headers, body: jsonEncode(body ?? const {}))
+              .timeout(_authTimeout);
+      Map<String, dynamic>? decoded;
+      try {
+        final j = json.decode(r.body);
+        if (j is Map) decoded = Map<String, dynamic>.from(j);
+      } catch (_) {}
+      return _AuthResponse(r.statusCode, decoded);
+    } catch (e) {
+      print('auth request failed: $e');
+      return null;
+    }
+  }
+
+  static const Duration _authTimeout = Duration(seconds: 30);
+
+  static String? _message(Map<String, dynamic>? data) {
+    final m = data?['message'];
+    if (m is String && m.isNotEmpty) return m;
+    final r = data?['result'];
+    if (r is String && r.isNotEmpty) return r;
+    return null;
+  }
+
   logoutUser() async {
+    try {
+      locator<SessionKeeper>().stop();
+    } catch (_) {}
     await SharedPreferencesMethod.storage.remove(StorageKeys.ACCESS_TOKEN);
     await SharedPreferencesMethod.storage.remove(StorageKeys.REFRESH_TOKEN);
     await SharedPreferencesMethod.storage.remove(StorageKeys.APPUSER_DATA);
@@ -492,4 +557,79 @@ class AuthRepo {
 
     return numbers;
   }
+}
+
+/// Result of [AuthRepo.refreshSession].
+enum RefreshStatus {
+  /// New token stored.
+  ok,
+
+  /// Server answered 401: the token expired or was revoked. Sign in again.
+  expired,
+
+  /// Network or server error. The stored token is kept; retry later.
+  failed,
+
+  /// No stored token (never signed in, or signed out meanwhile).
+  noSession,
+}
+
+/// The server wants a two-factor code before it hands out a session.
+class MfaChallenge {
+  final String tempToken;
+  final List<String> methods;
+  final DateTime expiresAt;
+
+  /// Email typed on the password step, saved for prefill once signed in.
+  final String email;
+
+  /// FCM token from the password step, sent again on verify.
+  final String? pushToken;
+
+  MfaChallenge({
+    required this.tempToken,
+    required this.methods,
+    required this.expiresAt,
+    required this.email,
+    this.pushToken,
+  });
+
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
+  /// Null unless [result] is a `requires_mfa` answer from `/auth/login`.
+  static MfaChallenge? fromResult(Map<String, dynamic> result,
+      {required String email, String? pushToken}) {
+    if (result['requires_mfa'] != true) return null;
+    final temp = result['temp_token'];
+    if (temp is! String || temp.isEmpty) return null;
+    final seconds = result['expires_in'] is num
+        ? (result['expires_in'] as num).toInt()
+        : 600;
+    final methods = (result['mfa_methods'] is List)
+        ? (result['mfa_methods'] as List).map((e) => e.toString()).toList()
+        : const <String>['totp'];
+    return MfaChallenge(
+      tempToken: temp,
+      methods: methods,
+      expiresAt: DateTime.now().add(Duration(seconds: seconds)),
+      email: email,
+      pushToken: pushToken,
+    );
+  }
+}
+
+/// A failed code step. [restart] = go back to the password step.
+class AuthFailure {
+  final String message;
+  final bool restart;
+  const AuthFailure(this.message, {this.restart = false});
+
+  @override
+  String toString() => message;
+}
+
+class _AuthResponse {
+  final int status;
+  final Map<String, dynamic>? body;
+  _AuthResponse(this.status, this.body);
 }

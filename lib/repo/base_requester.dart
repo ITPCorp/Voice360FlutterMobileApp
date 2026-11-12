@@ -23,23 +23,16 @@ class BaseRequester {
   /// thousands of /auth/logout calls per second).
   bool _unauthorizedHandled = false;
 
-  /// Centralized handler for 401 responses. Idempotent — safe to call from
-  /// any HTTP verb's response branch.
-  Future<void> _handleUnauthorized() async {
+  /// Centralized handler for 401 responses (and for a session refresh that
+  /// the server refused). Idempotent, safe to call from any HTTP verb's
+  /// response branch. The login screen prefills the saved email; the user
+  /// types the password again. No password is stored on the device.
+  Future<void> handleUnauthorized() async {
     if (_unauthorizedHandled) return;
     _unauthorizedHandled = true;
     try {
       await _authRepo.logoutUser();
     } catch (_) {/* logout request can itself fail; ignore */}
-    // Best-effort remember-me decision. Treat missing as false.
-    final rememberMe =
-        SharedPreferencesMethod.getBool(StorageKeys.REMEMBER) ?? false;
-    if (rememberMe) {
-      // Try silent re-login if creds were saved.
-      try {
-        await _authRepo.reLoginUser();
-      } catch (_) {}
-    }
     Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
     CustomToast.showToast('Session expired, please log in again', true);
     // Reset the guard after the user lands on the login screen so a future
@@ -48,6 +41,7 @@ class BaseRequester {
       _unauthorizedHandled = false;
     });
   }
+
   // late String baseURL = "https://gym.vidseries.com/";
   // late String BearerImageUrl = "https://gym.vidseries.com/";
   late String BearerImageUrl = "https://gym.globalcaregroup.net/";
@@ -120,7 +114,7 @@ class BaseRequester {
         }
         return jsonData;
       } else if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        await handleUnauthorized();
         return response.statusCode;
       } else {
         jsonData = json.decode(response.body);
@@ -223,7 +217,7 @@ class BaseRequester {
         jsonData = json.decode(response.body);
         return jsonData;
       } else if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        await handleUnauthorized();
         return;
       } else {
         throw Exception('Failed');
@@ -281,7 +275,7 @@ class BaseRequester {
         jsonData = json.decode(response.body);
         return jsonData;
       } else if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        await handleUnauthorized();
         return;
       } else {
         throw Exception('Failed');
@@ -325,7 +319,7 @@ class BaseRequester {
         // return {};
         return jsonData;
       } else if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        await handleUnauthorized();
         return;
       } else {
         throw Exception('Failed');
@@ -369,7 +363,7 @@ class BaseRequester {
         // return {};
         return jsonData;
       } else if (response.statusCode == 401) {
-        await _handleUnauthorized();
+        await handleUnauthorized();
         return;
       } else {
         throw Exception('Failed');

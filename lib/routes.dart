@@ -100,6 +100,7 @@ class Endpoints {
   static String LOGOUT_URL = Config.BASE_URL_CRM + "/auth/logout";
   static String SERVICES_URL = Config.BASE_URL_CRM + "/services";
   static String REFRESH_TOKEN_URL = Config.BASE_URL_CRM + "/auth/refresh";
+  static String VERIFY_2FA_URL = Config.BASE_URL_CRM + "/auth/2fa/verify";
   static String USER_PROFILE = Config.BASE_URL_CRM + "/myprofile";
 
   static String GET_DEVICES_URL(api_id) {
