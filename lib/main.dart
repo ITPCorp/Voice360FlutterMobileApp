@@ -61,7 +61,11 @@ Future<void> main() async {
   // App-wake: native may already hold a call push (cold start from PushKit /
   // FCM). Start listening before anything else so the SIP UA starts at once.
   unawaited(CallWakeService.instance.init());
-  unawaited(_bootstrapInBackground());
+  // On a cold wake the SIP REGISTER goes first; the rest of the bootstrap
+  // waits for it (at most a few seconds). A normal launch waits <0.6 s.
+  unawaited(CallWakeService.instance
+      .startupGate()
+      .then((_) => _bootstrapInBackground()));
   runApp(const Voice360App());
 }
 

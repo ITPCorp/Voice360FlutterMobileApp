@@ -17,6 +17,7 @@ import 'package:itp_voice/repo/contacts_repo.dart';
 import 'package:itp_voice/repo/messages_repo.dart';
 import 'package:itp_voice/repo/voice_mails_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/numbers_service.dart';
 import 'package:itp_voice/services/saved_login.dart';
 import 'package:itp_voice/services/session_keeper.dart';
@@ -337,6 +338,9 @@ class LoginController extends GetxController {
         .then((prefs) => SavedLogin().migrateLegacy(prefs))
         .catchError((_) {});
     Future.delayed(const Duration(seconds: 3), () async {
+      // A call push started the app: let SIP register before the auto-login
+      // API calls and home screen loads compete for the isolate.
+      await CallWakeService.instance.startupGate();
       SharedPreferences _prefs = await SharedPreferences.getInstance();
       await _applyStoredTheme(_prefs);
       isRemember.value = _prefs.getBool(StorageKeys.REMEMBER) ?? true;

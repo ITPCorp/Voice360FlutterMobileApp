@@ -74,6 +74,27 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   bool get hasWakeCalls => _calls.isNotEmpty;
 
+  final Completer<void> _readyDone = Completer<void>();
+  Completer<void>? _wakeRegistered;
+
+  /// Startup work that is not needed to take a call (time zones, caches,
+  /// auto-login API calls) awaits this. When the app was started by a call
+  /// push it holds until the SIP REGISTER answered (max [max]), so the Dart
+  /// isolate is free for the REGISTER on a cold wake. Otherwise it returns as
+  /// soon as native said whether a push is waiting (max ~0.5 s).
+  Future<void> startupGate({Duration max = const Duration(seconds: 4)}) async {
+    try {
+      await _readyDone.future.timeout(const Duration(milliseconds: 600));
+    } catch (_) {}
+    final w = _wakeRegistered;
+    if (w == null || w.isCompleted) return;
+    final t0 = _now();
+    try {
+      await w.future.timeout(max);
+    } catch (_) {}
+    _log('startup work held ${_now() - t0} ms for the wake REGISTER');
+  }
+
   // ───────────────────────────────── init ─────────────────────────────────
 
   /// Called from main() before runApp. Safe to call more than once.
@@ -92,6 +113,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     }
     unawaited(_loadTimings());
     await _ready();
+    if (!_readyDone.isCompleted) _readyDone.complete();
   }
 
   /// Tell native Dart is listening and take what it queued. On Android the
@@ -207,6 +229,9 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
         '(push ${p.sentAtMs == null ? '?' : p.receivedAtMs - p.sentAtMs!} ms in transit, '
         'dart +${c.t.dartSeen! - p.receivedAtMs} ms${cold ? ', cold start' : ''})');
     _inviteTimers[p.callId] = Timer(inviteTimeout, () => _inviteTimedOut(p.callId));
+    if (!helper.registered && (_wakeRegistered == null || _wakeRegistered!.isCompleted)) {
+      _wakeRegistered = Completer<void>();
+    }
     unawaited(_ensureRegistered(c));
   }
 
@@ -334,6 +359,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   @override
   void registrationStateChanged(RegistrationState state) {
     final now = _now();
+    if (state.state != RegistrationStateEnum.NONE) {
+      final w = _wakeRegistered;
+      if (w != null && !w.isCompleted) w.complete();
+    }
     if (state.state == RegistrationStateEnum.REGISTERED) {
       for (final c in _calls.values) {
         if (c.t.registered == null) {
