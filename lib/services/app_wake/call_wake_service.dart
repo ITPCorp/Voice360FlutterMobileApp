@@ -91,6 +91,13 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
       });
     }
     unawaited(_loadTimings());
+    await _ready();
+  }
+
+  /// Tell native Dart is listening and take what it queued. On Android the
+  /// channel can be bound a moment after this engine starts (audio_service may
+  /// create the engine), so a missing bridge is retried for a few seconds.
+  Future<void> _ready([int attempt = 0]) async {
     try {
       final res = await _channel.invokeMethod<dynamic>('ready');
       if (res is Map) {
@@ -105,6 +112,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
         }
       }
     } on MissingPluginException {
+      if (attempt < 10 && (Platform.isAndroid || Platform.isIOS)) {
+        await Future.delayed(const Duration(seconds: 1));
+        return _ready(attempt + 1);
+      }
       _log('no native app-wake bridge on this platform');
     } catch (e) {
       _log('ready failed: $e');

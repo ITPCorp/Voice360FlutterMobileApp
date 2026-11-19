@@ -30,7 +30,10 @@ import java.util.concurrent.TimeUnit
 object AppWake {
     const val TAG = "AppWake"
     const val PUSH_TYPE = "voice360_call"
-    private const val ENGINE_ID = "voice360_main"
+    // Same id audio_service caches its engine under (AudioServicePlugin.
+    // getFlutterEngine): with any other id audio_service starts a SECOND engine
+    // that runs main() again, so the app would have two Dart isolates.
+    private const val ENGINE_ID = "audio_service_engine"
     private const val CHANNEL = "voice360/app_wake"
     private const val PREFS = "voice360_app_wake"
     private const val KEY_ENDED = "ended_call_ids"
@@ -49,9 +52,13 @@ object AppWake {
 
     /** The process-wide engine; MainActivity attaches to the same one. Main thread only. */
     fun engine(context: Context): FlutterEngine {
-        FlutterEngineCache.getInstance().get(ENGINE_ID)?.let { return it }
         val app = context.applicationContext
         appContext = app
+        FlutterEngineCache.getInstance().get(ENGINE_ID)?.let {
+            // audio_service may have created it first; make sure our channel is on it.
+            if (boundEngine !== it) bindChannel(it)
+            return it
+        }
         val engine = FlutterEngine(app)
         bindChannel(engine)
         engine.dartExecutor.executeDartEntrypoint(DartExecutor.DartEntrypoint.createDefault())
@@ -60,7 +67,10 @@ object AppWake {
         return engine
     }
 
+    private var boundEngine: FlutterEngine? = null
+
     private fun bindChannel(engine: FlutterEngine) {
+        boundEngine = engine
         dartReady = false
         val ch = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
         channel = ch
