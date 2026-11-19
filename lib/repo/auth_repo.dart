@@ -503,7 +503,10 @@ class AuthRepo {
       await CallWakeService.instance.onLogout();
     } catch (_) {}
     try {
-      await BaseRequesterMethods.baseRequester.baseGetAPI(Endpoints.LOGOUT_URL);
+      // source=mobile: the CRM clears this phone's push tokens (FCM + VoIP)
+      // so a signed-out phone stops ringing for calls.
+      await BaseRequesterMethods.baseRequester
+          .baseGetAPI('${Endpoints.LOGOUT_URL}?source=mobile');
     } catch (e) {
       print(e.toString());
     }

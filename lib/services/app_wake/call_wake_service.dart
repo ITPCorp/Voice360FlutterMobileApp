@@ -216,7 +216,11 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
       _log('cancel push for ${p.callId}, waiting for the SIP CANCEL');
       return;
     }
-    _finish(c, 'cancelled before INVITE${c.accepted ? ' (user had tapped Answer)' : ''}');
+    _finish(
+        c,
+        c.declined
+            ? 'declined before INVITE'
+            : 'cancelled before INVITE${c.accepted ? ' (user had tapped Answer)' : ''}');
   }
 
   void _inviteTimedOut(String callId) {
@@ -479,6 +483,9 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     if (c.state == WakeState.ended) return;
     c.declined = true;
     _remember(c.callId);
+    // Native must not turn the dialplan's later cancel push into a
+    // "missed call" for a call the user declined.
+    _native('markEnded', {'call_id': c.callId, 'uuid': c.uuid});
     if (call != null) {
       _reject(call);
     } else {
