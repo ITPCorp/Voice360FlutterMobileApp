@@ -92,3 +92,4 @@ windows/
 
 # Project-specific
 certs/
+android/.kotlin/
