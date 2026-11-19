@@ -15,6 +15,11 @@ import io.flutter.embedding.engine.FlutterEngine
  */
 class MainActivity : FlutterActivity() {
 
+    companion object {
+        /** Ongoing-call notification tap: open the app on the in-call screen. */
+        const val ACTION_OPEN_CALL = "com.appicator.itp_voice.OPEN_CALL"
+    }
+
     override fun provideFlutterEngine(context: Context): FlutterEngine =
         AppWake.engine(context.applicationContext)
 
@@ -24,11 +29,17 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showOverLockIfCall(intent)
+        openCallIfAsked(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         showOverLockIfCall(intent)
+        openCallIfAsked(intent)
+    }
+
+    private fun openCallIfAsked(intent: Intent?) {
+        if (intent?.action == ACTION_OPEN_CALL) AppWake.callAction(this, "open")
     }
 
     /** Opened by Answer on the call notification: show over the lock screen. */

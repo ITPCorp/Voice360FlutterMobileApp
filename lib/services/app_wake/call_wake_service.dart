@@ -11,6 +11,7 @@ import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/active_call_service.dart';
 import 'package:itp_voice/services/app_wake/wake_call.dart';
 import 'package:itp_voice/services/sip_settings.dart';
 import 'package:itp_voice/storage_keys.dart';
@@ -177,6 +178,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
         break;
       case 'mute':
         _onNativeMute((e['uuid'] ?? '').toString(), e['muted']?.toString() == '1');
+        break;
+      case 'callAction':
+        // Ongoing-call notification (Android): open / mute / speaker / hangup.
+        ActiveCallService.instance.onNativeAction((e['action'] ?? '').toString());
         break;
       case 'audio':
         _log('CallKit audio session ${e['active'] == '1' ? 'active' : 'inactive'}');

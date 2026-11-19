@@ -13,7 +13,9 @@ import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/demo_mode_service.dart';
+import 'package:itp_voice/services/active_call_service.dart';
 import 'package:itp_voice/services/app_wake/call_wake_service.dart';
+import 'package:itp_voice/widgets/on_call_bar.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:timezone/data/latest_all.dart';
 
@@ -60,6 +62,9 @@ Future<void> main() async {
   setupLocator();
   // App-wake: native may already hold a call push (cold start from PushKit /
   // FCM). Start listening before anything else so the SIP UA starts at once.
+  // Before anything can start a call: tracks the active call for the
+  // "On call" bar, the call screen and the ongoing-call notification.
+  ActiveCallService.instance.init();
   unawaited(CallWakeService.instance.init());
   // On a cold wake the SIP REGISTER goes first; the rest of the bootstrap
   // waits for it (at most a few seconds). A normal launch waits <0.6 s.
@@ -157,6 +162,12 @@ class Voice360App extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         getPages: AppRoutes.routes,
         initialRoute: Routes.LOGIN_SCREEN_ROUTE,
+        routingCallback: (routing) {
+          final r = routing?.current;
+          if (r != null) ActiveCallService.instance.currentRoute.value = r;
+        },
+        builder: (context, child) =>
+            OnCallBarHost(child: child ?? const SizedBox.shrink()),
       ),
     );
   }

@@ -173,7 +173,10 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     case "markEnded":
       markEnded(callId)
       result(nil)
-    case "connected":
+    case "connected", "callOngoing", "callEnded":
+      // callOngoing/callEnded drive Android's ongoing-call notification. On
+      // iOS, CallKit (woken calls) and the green status-bar pill (any call
+      // using the mic) bring the app back; Dart then opens the in-call screen.
       result(nil)
     case "beginBackground":
       var id = UIBackgroundTaskIdentifier.invalid

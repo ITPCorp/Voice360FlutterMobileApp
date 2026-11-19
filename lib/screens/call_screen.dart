@@ -7,7 +7,18 @@ import 'package:sip_ua/sip_ua.dart';
 
 class CallScreen extends StatelessWidget {
   CallScreen({super.key});
-  final CallScreenController con = Get.put(CallScreenController());
+  final CallScreenController con = _controllerFor(Get.arguments);
+
+  /// One controller per call: a leftover controller from an earlier call
+  /// (or an earlier visit) must not show the wrong call.
+  static CallScreenController _controllerFor(dynamic arg) {
+    if (Get.isRegistered<CallScreenController>()) {
+      final existing = Get.find<CallScreenController>();
+      if (arg is! Call || existing.call?.id == arg.id) return existing;
+      Get.delete<CallScreenController>(force: true);
+    }
+    return Get.put(CallScreenController());
+  }
 
   String _peerName() {
     final id = con.call?.remote_identity ?? '';
@@ -23,6 +34,8 @@ class CallScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
+      // Android Back leaves this screen and keeps the call: the "On call" bar
+      // on every screen and the ongoing-call notification lead back here.
       child: Scaffold(
         body: Container(
           decoration: const BoxDecoration(

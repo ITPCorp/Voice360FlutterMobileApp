@@ -104,6 +104,16 @@ object AppWake {
                         appContext?.let { markEnded(it, callId) }
                         result.success(null)
                     }
+                    "callOngoing" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val args = (call.arguments as? Map<String, Any?>) ?: emptyMap()
+                        appContext?.let { CallOngoingService.startOrUpdate(it, args) }
+                        result.success(null)
+                    }
+                    "callEnded" -> {
+                        appContext?.let { CallOngoingService.stop(it) }
+                        result.success(null)
+                    }
                     "getVoipToken" -> result.success(null)
                     "beginBackground", "endBackground" -> result.success(null)
                     else -> result.notImplemented()
@@ -195,6 +205,19 @@ object AppWake {
         sendToDart(event)
     }
 
+    /** Ongoing-call notification tap or button -> Dart ActiveCallService. */
+    fun callAction(context: Context, action: String) {
+        appContext = context.applicationContext
+        main.post {
+            if (FlutterEngineCache.getInstance().get(ENGINE_ID) == null) {
+                // No Dart left to act on the call: drop the stale notification.
+                if (action != "open") CallOngoingService.stop(context.applicationContext)
+                return@post
+            }
+            sendToDart(mapOf("event" to "callAction", "action" to action))
+        }
+    }
+
     private fun sendToDart(event: Map<String, Any?>) {
         val ch = channel
         if (ch != null && dartReady) {
@@ -250,8 +273,11 @@ object AppWake {
                 "isShowCallback" to false,
                 "subtitle" to "Missed call",
             ),
+            // The app posts its own ongoing-call notification for every call
+            // (CallOngoingService: tap returns to the call, Mute/Speaker/Hang
+            // up). The plugin's has no tap action and only Hang up.
             "callingNotification" to hashMapOf<String, Any?>(
-                "showNotification" to true,
+                "showNotification" to false,
                 "isShowCallback" to true,
                 "subtitle" to "VOICE360 call",
                 "callbackText" to "Hang up",
