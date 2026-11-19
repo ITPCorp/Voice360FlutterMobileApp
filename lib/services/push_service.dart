@@ -8,7 +8,11 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/main.dart' show firebaseReady;
+import 'package:itp_voice/repo/auth_repo.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
+import 'package:itp_voice/storage_keys.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Centralized push-notification pipeline. Replaces the per-screen FCM
 /// listeners that lived in LoginScreen / ChatController.
@@ -93,6 +97,7 @@ class PushService {
         _cachedToken = newToken;
         // ignore: avoid_print
         print('[Push] token refreshed: $newToken');
+        _resyncTokens('fcm token refreshed');
       });
 
       // Cold-launched from a tapped notification.
@@ -111,6 +116,29 @@ class PushService {
     } catch (e) {
       // ignore: avoid_print
       print('[Push] init listener wiring failed: $e');
+    }
+  }
+
+  StreamSubscription<String>? _voipSub;
+
+  /// App-wake: a new PushKit token (iOS) or FCM token has to reach the CRM
+  /// right away, not at the next login. /auth/refresh carries both.
+  void watchCallTokens() {
+    _voipSub ??= CallWakeService.instance.voipTokenChanges
+        .listen((_) => _resyncTokens('voip token changed'));
+  }
+
+  Future<void> _resyncTokens(String why) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final t = prefs.getString(StorageKeys.REFRESH_TOKEN);
+      if (t == null || t.isEmpty) return;
+      // ignore: avoid_print
+      print('[Push] $why, sending tokens with /auth/refresh');
+      await AuthRepo().refreshSession();
+    } catch (e) {
+      // ignore: avoid_print
+      print('[Push] token resync failed: $e');
     }
   }
 
@@ -188,6 +216,9 @@ class PushService {
   // ──────────────────────────────────────────────────────────────────
 
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
+    // Call pushes are handled natively (AppWakeMessagingService); never show
+    // them as a message banner.
+    if (message.data['type'] == 'voice360_call') return;
     final threadId = _extractThreadId(message);
     // Don't double-display if user is already inside the matching chat.
     if (threadId != null &&
@@ -224,6 +255,7 @@ class PushService {
 
   void _routeFromRemoteMessage(RemoteMessage message) {
     final data = message.data;
+    if (data['type'] == 'voice360_call') return;
     final threadId = _extractThreadId(message);
     if (threadId == null) return;
     final toNumber = _extractToNumber(message);

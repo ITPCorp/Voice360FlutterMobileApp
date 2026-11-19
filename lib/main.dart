@@ -13,10 +13,15 @@ import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/demo_mode_service.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:timezone/data/latest_all.dart';
 
+@pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // voice360_call pushes are handled natively (AppWakeMessagingService on
+  // Android, PushKit on iOS); this isolate has nothing to do for them.
+  if (message.data['type'] == 'voice360_call') return;
   // ignore: avoid_print
   print('Handling a background message ${message.messageId}');
 }
@@ -53,6 +58,9 @@ Future<void> main() async {
   // for 15+ minutes. Users saw a white screen (Android) or a frozen
   // launch image (iOS) and assumed the app had crashed.
   setupLocator();
+  // App-wake: native may already hold a call push (cold start from PushKit /
+  // FCM). Start listening before anything else so the SIP UA starts at once.
+  unawaited(CallWakeService.instance.init());
   unawaited(_bootstrapInBackground());
   runApp(const Voice360App());
 }
@@ -116,6 +124,7 @@ Future<void> _bootstrapInBackground() async {
     await DemoModeService.instance.load();
   } catch (_) {}
   unawaited(locator<PushService>().initialize());
+  locator<PushService>().watchCallTokens();
   try {
     initializeTimeZones();
   } catch (_) {}

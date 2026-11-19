@@ -8,6 +8,7 @@ import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
@@ -39,6 +40,8 @@ class BaseScreenController extends GetxController
     super.onReady();
     // Open the chat from a notification tapped during cold launch.
     locator<PushService>().flushPendingNavigation();
+    CallWakeService.instance.flushCallScreen();
+    CallWakeService.instance.ensureCallPermissions();
   }
 
   updateCurrentTab(int val) {
@@ -102,38 +105,9 @@ class BaseScreenController extends GetxController
       Get.offAllNamed(Routes.LOGIN_SCREEN_ROUTE);
       return;
     }
-    final _username = device.sipUsername;
-    final _password = device.sipPassword;
-
-    UaSettings settings = UaSettings();
-
-    settings.webSocketUrl = Config.WEB_SOCKET_URL;
-    print(_realm);
-    settings.webSocketSettings.extraHeaders = {
-      "Proxy-Authorization": "Digest realm=${_realm}"
-      ,"X-Auth-Token": "Bearer ${_password}",
-      "X-Auth-User": "${_username}",
-      "X-Auth-Realm": "${_realm}",
-      "X-Auth-Password": "${_password}",
-      "Sec-WebSocket-Protocol": "sip"
-
-    };
-    settings.webSocketSettings.allowBadCertificate = true;
-    // settings.uri = "${_username}@${_realm}";
-    settings.uri = "sip:${_username}@${_realm}";
-    settings.authorizationUser = "${_username}";
-    settings.password = "${_password}";
-    settings.displayName = "${_username}";
-    // settings.userAgent = 'Dart SIP Client v1.0.0';
-    settings.userAgent = 'Flutter SIP Client v1.0';
-    settings.dtmfMode = DtmfMode.INFO;
-    settings.register = true;
-    settings.transportType = TransportType.WS;
-    settings.webSocketSettings.transport_scheme = "wss";
-    settings.registrarServer = "sip:${_realm}";
-    print("CONNECTED 222");
-    print(helper!.registered);
-    (helper!.start(settings));
+    // Shared with the app-wake path: a no-op when a woken call already
+    // started the UA (restarting it would drop that call).
+    CallWakeService.instance.startUa();
   }
 
   @override
@@ -141,7 +115,12 @@ class BaseScreenController extends GetxController
     // TODO: implement callStateChanged
     print(state.state);
     if (state.state == CallStateEnum.CALL_INITIATION) {
-      // Navigator.pushNamed(context, '/callscreen', arguments: call);
+      // A call the app was woken for rings on the system call UI
+      // (CallKit / Telecom); the call screen opens once it is answered there.
+      if (call.direction == Direction.incoming &&
+          CallWakeService.instance.claim(call) != null) {
+        return;
+      }
       Get.toNamed(
         Routes.CALL_SCREEN_ROUTE,
         arguments: call,
@@ -182,7 +161,10 @@ class BaseScreenController extends GetxController
       CustomToast.showToast(
           'Not connected to call server — check your internet and try again', true);
       // Nudge the registrar in case we got into a bad state.
-      try { loadSettings(); } catch (_) {}
+      try {
+        await CallWakeService.instance.stopUa('not connected on dial');
+        loadSettings();
+      } catch (_) {}
       return null;
     }
     if (number == null || number.isEmpty) {

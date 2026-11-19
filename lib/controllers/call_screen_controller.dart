@@ -11,7 +11,7 @@ import 'package:sip_ua/sip_ua.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
-import '../main.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import '../widgets/custom_toast.dart';
 
 class CallScreenController extends GetxController
@@ -52,9 +52,11 @@ class CallScreenController extends GetxController
   void onInit() async {
     // TODO: implement onInit
     call = Get.arguments;
-    if (call!.direction == "INCOMING") {
+    if (call!.direction == Direction.incoming) {
       isIncomingCall!.value = true;
-      isIncomingCallAccepted!.value = false;
+      // Answered on CallKit / the Android call notification (app-wake).
+      isIncomingCallAccepted!.value =
+          CallWakeService.instance.isAnsweredByWake(call!.id);
     }
     helper = Get.find<SIPUAHelper>();
     helper!.addSipUaHelperListener(this);
@@ -370,7 +372,7 @@ class MyAudioHandler extends BaseAudioHandler
   // The most common callbacks:
   Future<void> play() async {
     if (controller.state.value == CallStateEnum.CONNECTING &&
-        controller.call!.direction == 'INCOMING') {
+        controller.call!.direction == Direction.incoming) {
       try {
         controller.handleAccept();
       } catch (e) {

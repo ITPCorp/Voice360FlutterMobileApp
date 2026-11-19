@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/helpers/config.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
+import 'package:sip_ua/sip_ua.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/repo/base_requester.dart';
@@ -216,6 +219,37 @@ class _DebugScreenState extends State<DebugScreen> {
                   _kv('USER_ID', _userId ?? '—'),
                   _kv('DEFAULT_NUMBER', _defaultNumber ?? '—'),
                   _kv('EXTENSION', _extension ?? '—'),
+                ]),
+                _section('Incoming calls (app-wake)', [
+                  _kv('backend', '${Config.ENV} · ${Config.WEB_SOCKET_URL}'),
+                  _kv('SIP registered', Get.find<SIPUAHelper>().registered.toString()),
+                  _kvLong('VoIP token (iOS)', CallWakeService.instance.voipToken),
+                  Obx(() {
+                    final rows = CallWakeService.instance.recentTimings;
+                    if (rows.isEmpty) return _kv('wake timings', 'none yet');
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final r in rows)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: SelectableText(r,
+                                style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
+                          ),
+                      ],
+                    );
+                  }),
+                  Row(children: [
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final rows = await CallWakeService.instance.timingRows();
+                        await Clipboard.setData(ClipboardData(text: rows.join('\n')));
+                        CustomToast.showToast('Wake timings copied (${rows.length})', false);
+                      },
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text('Copy timings JSON'),
+                    ),
+                  ]),
                 ]),
                 _section('Global notification socket', [
                   _kv('connected', _socketConnected.toString()),

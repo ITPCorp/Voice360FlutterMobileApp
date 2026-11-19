@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/helpers/config.dart';
 import 'package:itp_voice/controllers/login_controller.dart';
 import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
@@ -40,6 +41,19 @@ class _LoginScreenState extends State<LoginScreen> {
           : SystemUiOverlayStyle.dark,
       child: Scaffold(
         backgroundColor: cs.surface,
+        // Test builds made with --dart-define=V360_ENV=dev talk to the dev stack.
+        bottomNavigationBar: Config.isDev
+            ? Container(
+                color: Colors.orange,
+                padding: const EdgeInsets.all(6),
+                child: const SafeArea(
+                  top: false,
+                  child: Text('DEV BACKEND (api.itpscorp.com/dev)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+                ),
+              )
+            : null,
         body: Obx(() {
           if (!con.showLogin.value) return _buildSplash(context);
           if (con.mfaChallenge.value != null) {

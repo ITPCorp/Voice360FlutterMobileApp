@@ -391,6 +391,65 @@ void main() {
     });
   });
 
+  group('app-wake call push fields (mobile_platform / mobile_voip_token)', () {
+    AuthRepo iosRepo() => AuthRepo(
+        pushTokenProvider: () async => 'fcm-1',
+        callPushFieldsProvider: () async =>
+            {'mobile_platform': 'ios', 'mobile_voip_token': 'ab' * 32});
+
+    test('login sends them next to mobile_device_id', () async {
+      final res = await withHttp(
+          () => iosRepo().loginUser('user@example.com', 's3cret'), (req) {
+        final body = jsonDecode(req.body);
+        expect(body['mobile_device_id'], 'fcm-1');
+        expect(body['mobile_platform'], 'ios');
+        expect(body['mobile_voip_token'], 'ab' * 32);
+        return _json({'errors': false, 'result': _session('tok-A')});
+      });
+      expect(res, isTrue);
+    });
+
+    test('2FA verify sends them too', () async {
+      final challenge = MfaChallenge(
+          tempToken: 'tmp',
+          methods: const ['totp'],
+          expiresAt: DateTime.now().add(const Duration(minutes: 5)),
+          email: 'user@example.com',
+          pushToken: 'fcm-1');
+      final res = await withHttp(() => iosRepo().verifyMfaCode(challenge, '123456'), (req) {
+        final body = jsonDecode(req.body);
+        expect(body['code'], '123456');
+        expect(body['mobile_platform'], 'ios');
+        expect(body['mobile_voip_token'], 'ab' * 32);
+        return _json({'errors': false, 'result': _session('tok-B')});
+      });
+      expect(res, isTrue);
+    });
+
+    test('refresh carries them as query parameters', () async {
+      await prefs.setString(StorageKeys.REFRESH_TOKEN, 'tok-old');
+      final res = await withHttp(() => iosRepo().refreshSession(), (req) {
+        expect(req.url.path, Uri.parse(Endpoints.REFRESH_TOKEN_URL).path);
+        expect(req.url.queryParameters['mobile_platform'], 'ios');
+        expect(req.url.queryParameters['mobile_voip_token'], 'ab' * 32);
+        return _json({'errors': false, 'result': _session('tok-new')});
+      });
+      expect(res, RefreshStatus.ok);
+    });
+
+    test('android sends the platform only', () async {
+      final repo = AuthRepo(
+          pushTokenProvider: () async => 'fcm-1',
+          callPushFieldsProvider: () async => {'mobile_platform': 'android'});
+      await withHttp(() => repo.loginUser('user@example.com', 's3cret'), (req) {
+        final body = jsonDecode(req.body);
+        expect(body['mobile_platform'], 'android');
+        expect(body.containsKey('mobile_voip_token'), isFalse);
+        return _json({'errors': false, 'result': _session('tok-A')});
+      });
+    });
+  });
+
   group('SSO', () {
     test('trades the SSO token at /auth/refresh with the push token', () async {
       final res = await withHttp(() => repo().loginWithSsoToken('sso-jwt'), (req) {

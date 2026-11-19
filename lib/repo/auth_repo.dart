@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:http/http.dart' as http;
 import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
@@ -13,6 +14,7 @@ import 'package:itp_voice/repo/base_requester.dart';
 import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/services/saved_login.dart';
 import 'package:itp_voice/services/session_keeper.dart';
@@ -138,10 +140,42 @@ class AuthRepo {
   /// tests do not touch Firebase.
   final Future<String?> Function() _pushToken;
 
-  AuthRepo({Future<String?> Function()? pushTokenProvider, SavedLogin? savedLogin})
-      : _pushToken = pushTokenProvider ??
+  AuthRepo({
+    Future<String?> Function()? pushTokenProvider,
+    SavedLogin? savedLogin,
+    Future<Map<String, String>> Function()? callPushFieldsProvider,
+  })  : _pushToken = pushTokenProvider ??
             (() => locator<PushService>().onLoginSuccess()),
+        _callPushFields = callPushFieldsProvider ?? defaultCallPushFields,
         _savedLogin = savedLogin ?? SavedLogin();
+
+  /// App-wake token contract (CONTRACT.md "App half + token plumbing"):
+  /// `mobile_platform` (ios|android) and, on iOS, the PushKit
+  /// `mobile_voip_token`, sent on login, 2FA verify and refresh. A missing
+  /// field leaves the stored value alone on the server.
+  final Future<Map<String, String>> Function() _callPushFields;
+
+  static Future<Map<String, String>> defaultCallPushFields() async {
+    final out = <String, String>{};
+    try {
+      if (Platform.isIOS) {
+        out['mobile_platform'] = 'ios';
+        final t = await CallWakeService.instance.waitForVoipToken();
+        if (t != null && t.isNotEmpty) out['mobile_voip_token'] = t;
+      } else if (Platform.isAndroid) {
+        out['mobile_platform'] = 'android';
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  Future<Map<String, String>> _safeCallPushFields() async {
+    try {
+      return await _callPushFields();
+    } catch (_) {
+      return const {};
+    }
+  }
 
   /// "Remember me" login in the secure store (#53034).
   final SavedLogin _savedLogin;
@@ -201,6 +235,7 @@ class AuthRepo {
     if (pushToken != null) {
       loginBody['mobile_device_id'] = pushToken;
     }
+    loginBody.addAll(await _safeCallPushFields());
     final res = await _send('POST', Endpoints.LOGIN_URL, body: loginBody);
     lastLoginStatus = res?.status;
     if (res == null) {
@@ -237,6 +272,7 @@ class AuthRepo {
     if (challenge.pushToken != null) {
       body['mobile_device_id'] = challenge.pushToken;
     }
+    body.addAll(await _safeCallPushFields());
     final res = await _send('POST', Endpoints.VERIFY_2FA_URL,
         body: body, bearer: challenge.tempToken);
     if (res == null) {
@@ -301,7 +337,11 @@ class AuthRepo {
   Future<RefreshStatus> refreshSession() async {
     final sent = SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
     if (sent == null || sent.isEmpty) return RefreshStatus.noSession;
-    final res = await _requestRefresh(sent);
+    String? fcm;
+    try {
+      fcm = locator.isRegistered<PushService>() ? locator<PushService>().cachedToken : null;
+    } catch (_) {}
+    final res = await _requestRefresh(sent, pushToken: fcm);
     // A logout or a new login while the call was in flight wins.
     final current = SharedPreferencesMethod.getString(StorageKeys.REFRESH_TOKEN);
     if (current != sent) {
@@ -342,10 +382,14 @@ class AuthRepo {
     await SharedPreferencesMethod.storage.remove(StorageKeys.TIME_ZONE);
   }
 
-  Future<_AuthResponse?> _requestRefresh(String bearer, {String? pushToken}) {
+  Future<_AuthResponse?> _requestRefresh(String bearer, {String? pushToken}) async {
+    final query = <String, String>{
+      if (pushToken != null && pushToken.isNotEmpty) 'mobile_device_id': pushToken,
+      ...await _safeCallPushFields(),
+    };
     var url = Endpoints.REFRESH_TOKEN_URL;
-    if (pushToken != null && pushToken.isNotEmpty) {
-      url = '$url?mobile_device_id=${Uri.encodeQueryComponent(pushToken)}';
+    if (query.isNotEmpty) {
+      url = '$url?${query.entries.map((e) => '${e.key}=${Uri.encodeQueryComponent(e.value)}').join('&')}';
     }
     return _send('GET', url, bearer: bearer);
   }
@@ -454,6 +498,9 @@ class AuthRepo {
     } catch (_) {}
     try {
       await locator<PushService>().onLogout();
+    } catch (_) {}
+    try {
+      await CallWakeService.instance.onLogout();
     } catch (_) {}
     try {
       await BaseRequesterMethods.baseRequester.baseGetAPI(Endpoints.LOGOUT_URL);

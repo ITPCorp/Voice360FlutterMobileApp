@@ -1,7 +1,7 @@
 import 'package:get/get.dart';
 import 'package:itp_voice/repo/base_requester.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sip_ua/sip_ua.dart';
+import 'package:itp_voice/services/sip_settings.dart';
 
 class Binding implements Bindings {
   @override
@@ -11,10 +11,8 @@ class Binding implements Bindings {
       return prefs;
     }, permanent: true);
 
-    await Get.putAsync<SIPUAHelper>(() async {
-      final helper = SIPUAHelper();
-      return helper;
-    }, permanent: true);
+    // The same instance the app-wake path may already have started.
+    SipHolder.helper;
 
     await Get.put<BaseRequester>(BaseRequester(), permanent: true);
   }
