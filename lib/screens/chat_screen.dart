@@ -10,6 +10,7 @@ import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/screens/transcript_modal.dart';
 import 'package:itp_voice/services/call_media.dart';
 import 'package:itp_voice/services/contact_resolver.dart';
+import 'package:itp_voice/services/notification_inbox.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -24,19 +25,40 @@ class _ChatScreenState extends State<ChatScreen> {
   final ScrollController _scroll = ScrollController();
   bool _bound = false;
 
+  late Worker _threadObserver;
+  static _ChatScreenState? _notificationOwner;
+  bool _current = false;
+
+  void _updateNotificationThread() {
+    if (_current) {
+      _notificationOwner = this;
+      NotificationInbox.setVisibleThread(con.threadId.value);
+    } else if (identical(_notificationOwner, this)) {
+      _notificationOwner = null;
+      NotificationInbox.setVisibleThread(null);
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_bound) return;
-    _bound = true;
-    con = ChatController(ModalRoute.of(context)?.settings.arguments);
-    ChatController.visible = con;
-    con.onStart();
+    _current = ModalRoute.isCurrentOf(context) == true;
+    if (!_bound) {
+      _bound = true;
+      con = ChatController(ModalRoute.of(context)?.settings.arguments);
+      ChatController.visible = con;
+      con.onStart();
+      _threadObserver = ever(con.threadId, (_) => _updateNotificationThread());
+    }
+    _updateNotificationThread();
   }
 
   @override
   void dispose() {
     if (identical(ChatController.visible, con)) ChatController.visible = null;
+    _threadObserver.dispose();
+    _current = false;
+    _updateNotificationThread();
     con.onDelete();
     _scroll.dispose();
     super.dispose();

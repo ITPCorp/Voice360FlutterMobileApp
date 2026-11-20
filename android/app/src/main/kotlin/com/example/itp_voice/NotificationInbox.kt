@@ -34,6 +34,10 @@ internal object NotificationInbox {
         val notifications = context.getSystemService(NotificationManager::class.java)
         MethodChannel(messenger, "voice360/notification_inbox").setMethodCallHandler { call, result ->
             when (call.method) {
+                "visibleThread" -> {
+                    SmsNotification.visibleThread = call.arguments as? String
+                    result.success(null)
+                }
                 "active" -> result.success(notifications.activeNotifications.mapNotNull { entry ->
                     val note = entry.notification
                     val missed = note.extras.getBoolean("voice360.missed") ||

@@ -12,7 +12,7 @@ import io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService
  */
 class AppWakeMessagingService : FlutterFirebaseMessagingService() {
     override fun handleIntent(intent: Intent) {
-        NotificationInbox.tagFirebaseNotification(intent)
+        if (!SmsNotification.prepare(intent)) NotificationInbox.tagFirebaseNotification(intent)
         super.handleIntent(intent)
     }
 
@@ -22,6 +22,7 @@ class AppWakeMessagingService : FlutterFirebaseMessagingService() {
             AppWake.onPush(applicationContext, data, System.currentTimeMillis())
             return
         }
+        if (SmsNotification.show(applicationContext, remoteMessage)) return
         super.onMessageReceived(remoteMessage)
     }
 }

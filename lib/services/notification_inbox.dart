@@ -10,6 +10,15 @@ import 'notification_destination.dart';
 class NotificationInbox {
   static const _channel = MethodChannel('voice360/notification_inbox');
 
+  static Future<void> setVisibleThread(String? id) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _channel.invokeMethod<void>('visibleThread', id);
+    } on MissingPluginException {
+      // No Android activity in widget tests or a headless engine.
+    }
+  }
+
   static String? androidTag(NotificationDestination? target) {
     if (target?.id == null) return null;
     final field = switch (target!.screen) {

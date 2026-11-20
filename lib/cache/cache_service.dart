@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'package:itp_voice/storage_keys.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:itp_voice/models/call_history_model.dart';
@@ -68,6 +72,13 @@ class AppCache {
     _voicemailsBox = await _safeOpenBox(_kBoxVoicemails);
     _metaBox = await _safeOpenBox(_kBoxMeta);
     _initialised = true;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final prefs = await SharedPreferences.getInstance();
+      if (!prefs.containsKey('sms_notification_names') &&
+          prefs.containsKey(StorageKeys.ACCESS_TOKEN)) {
+        await ContactsCache.writeNotificationNames(contacts.readAll());
+      }
+    }
   }
 
   Future<Box> _safeOpenBox(String name) async {
@@ -88,6 +99,7 @@ class AppCache {
   Future<void> clearAll() async {
     if (!_initialised) return;
     await Future.wait([
+      ContactsCache.writeNotificationNames(const []),
       _contactsBox.clear(),
       _threadsBox.clear(),
       _messagesBox.clear(),
@@ -171,7 +183,25 @@ class ContactsCache {
   Future<void> writeAll(List<Contact> fresh) async {
     final list = fresh.map((c) => _safeMap(c.toJson())).toList(growable: false);
     await _box.put(_kAllKey, list);
+    await writeNotificationNames(fresh);
     await _meta.put(_kSyncedAt, DateTime.now().toIso8601String());
+  }
+
+  // Android receives SMS when Dart and Hive may both be stopped.
+  static Future<void> writeNotificationNames(List<Contact> contacts) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    final names = <String, String>{};
+    for (final c in contacts) {
+      final number = normalizeNumber(c.phone);
+      final name = conversationName(c.firstname, c.lastname);
+      if (number.isNotEmpty && name != null) names.putIfAbsent(number, () => name);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (names.isEmpty) {
+      await prefs.remove('sms_notification_names');
+    } else {
+      await prefs.setString('sms_notification_names', jsonEncode(names));
+    }
   }
 
   Future<void> remove(int pk) async {

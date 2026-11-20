@@ -7,6 +7,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:flutter/services.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
+import 'package:itp_voice/services/contact_resolver.dart';
 import 'package:flutter/widgets.dart';
 import 'package:itp_voice/services/notification_inbox.dart';
 import 'package:itp_voice/controllers/chat_controller.dart';
@@ -232,6 +234,7 @@ class PushService {
   /// Drop local state and ask FCM to delete the token so a stale device
   /// doesn't keep receiving pushes after logout.
   Future<void> onLogout() async {
+    await (await SharedPreferences.getInstance()).remove('sms_notification_names');
     await _mailboxSub?.cancel();
     _mailboxSub = null;
     _cachedToken = null;
@@ -277,6 +280,20 @@ class PushService {
     }
 
     final n = message.notification;
+    // The Android service builds a single MessagingStyle card for this CRM
+    // envelope in every app state, including while another chat is open.
+    if (Platform.isAndroid && n != null && threadId != null &&
+        message.data['service_name'] == 'itp_voice') return;
+    if (threadId != null) {
+      final peer = destination?.peer ?? RegExp(r'^New Message from ([+()0-9 .-]+)$',
+          caseSensitive: false).firstMatch(n?.body ?? '')?.group(1);
+      final sender = ContactResolver.resolveNameOrNull(peer) ?? conversationNumber(peer);
+      final text = message.data['message']?.toString() ?? '';
+      await _showBanner(sender.isEmpty ? 'Messages' : sender,
+          text.isNotEmpty ? text : (message.data['media_type']?.toString().startsWith('image/') == false ? 'Attachment' : 'Photo'),
+          payload, threadId.hashCode & 0x7fffffff);
+      return;
+    }
     final title =
         n?.title ?? message.data['title']?.toString() ?? 'New message';
     final body = n?.body ?? message.data['body']?.toString() ?? '';

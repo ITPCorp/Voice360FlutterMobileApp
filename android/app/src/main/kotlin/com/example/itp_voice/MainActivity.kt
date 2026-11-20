@@ -33,12 +33,22 @@ class MainActivity : FlutterActivity() {
         super.onCreate(savedInstanceState)
         tapChannel = MethodChannel(AppWake.engine(applicationContext).dartExecutor.binaryMessenger, "voice360/notification_taps").also { channel ->
             channel.setMethodCallHandler { call, result ->
-                if (call.method == "take") result.success(consumeMissedTap()) else result.notImplemented()
+                if (call.method == "take") result.success(consumeNotificationTap()) else result.notImplemented()
             }
         }
         NotificationInbox.attach(this, AppWake.engine(applicationContext).dartExecutor.binaryMessenger)
         showOverLockIfCall(intent)
         openCallIfAsked(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        SmsNotification.resumed = true
+    }
+
+    override fun onPause() {
+        SmsNotification.resumed = false
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -49,12 +59,16 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun openCallIfAsked(intent: Intent?) {
-        if (intent?.action == "com.appicator.itp_voice.OPEN_RECENT") tapChannel?.invokeMethod("available", null)
+        if (intent?.action == SmsNotification.OPEN || intent?.action == "com.appicator.itp_voice.OPEN_RECENT") tapChannel?.invokeMethod("available", null)
         if (intent?.action == ACTION_OPEN_CALL) AppWake.callAction(this, "open")
     }
 
-    private fun consumeMissedTap(): Map<String, Any?>? {
+    private fun consumeNotificationTap(): Map<String, Any?>? {
         val tap = intent ?: return null
+        if (tap.action == SmsNotification.OPEN) {
+            tap.action = null
+            return listOf("message_thread_id", "to_phone_number", "from_number").associateWith { tap.getStringExtra(it) }
+        }
         if (tap.action != "com.appicator.itp_voice.OPEN_RECENT") return null
         tap.action = null
         val data = tap.getBundleExtra("EXTRA_CALLKIT_CALL_DATA")
