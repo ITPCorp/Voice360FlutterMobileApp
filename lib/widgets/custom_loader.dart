@@ -36,8 +36,8 @@ class _V360Loader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return WillPopScope(
-      onWillPop: () async => false,
+    return PopScope(
+      canPop: false,
       child: Material(
         type: MaterialType.transparency,
         child: BackdropFilter(

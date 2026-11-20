@@ -49,7 +49,8 @@ class _BaseScreenState extends State<BaseScreen> {
             for (var i = 0; i < _tabs.length; i++)
               TickerMode(
                   enabled: i == selected,
-                  child: _pages[i] ?? const SizedBox.shrink()),
+                  child: RepaintBoundary(
+                      child: _pages[i] ?? const SizedBox.shrink())),
           ]);
         }),
       ),

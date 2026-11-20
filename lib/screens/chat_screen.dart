@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:itp_voice/design/widgets/v360_live_list.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/chat_controller.dart';
@@ -173,22 +174,34 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          Obx(() => V360RefreshLine(active: con.refreshing.value)),
           Expanded(
             child: Obx(() {
               final messages = con.messages?.result?.messages ?? [];
-              // Show the loading spinner whenever a fetch is in flight AND
-              // there's nothing to render yet. This catches the case where
-              // we've seeded participants from the threads list (so
-              // _messages.value isn't null) but the actual message history
-              // hasn't loaded from disk or the server.
               if (con.isLoading.value && messages.isEmpty) {
-                return const Center(
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 2.4),
-                  ),
-                );
+                return ListView(
+                    padding: const EdgeInsets.all(16),
+                    reverse: true,
+                    children: [
+                      for (var i = 0; i < 6; i++)
+                        Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Align(
+                                alignment: i.isEven
+                                    ? Alignment.centerLeft
+                                    : Alignment.centerRight,
+                                child: V360Skeleton.box(
+                                    width: i.isEven ? 176 : 128,
+                                    height: i % 3 == 0 ? 60 : 44))),
+                    ]);
+              }
+              if (con.loadFailed.value && messages.isEmpty) {
+                return V360EmptyState(
+                    icon: Icons.cloud_off_outlined,
+                    title: 'Could not load messages',
+                    action: TextButton(
+                        onPressed: con.fetchChat,
+                        child: const Text('Try again')));
               }
               if (messages.isEmpty) {
                 // Only show the "new conversation" empty state when we're
@@ -206,47 +219,50 @@ class _ChatScreenState extends State<ChatScreen> {
               }
               final members = con.members;
               final isGroup = isGroupThread(members);
-              return ListView.builder(
-                controller: _scroll,
-                reverse: true,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: V360Spacing.s4,
-                  vertical: V360Spacing.s4,
-                ),
-                itemCount: messages.length,
-                itemBuilder: (_, i) {
-                  final m = messages[i];
-                  final next = i + 1 < messages.length ? messages[i + 1] : null;
-                  final isMe = m.messageParticipant == con.myNumber ||
-                      (m.messageParticipant != null &&
-                          m.messageParticipant ==
-                              con.messages?.result?.participants
-                                  ?.firstWhere(
-                                    (p) => p.isSelf == true,
-                                    orElse: () => Participants(),
-                                  )
-                                  .number);
-                  final showTimestamp =
-                      next == null || _shouldShowTimestamp(m, next);
-                  if (m.isCall) {
-                    return _CallTimelineEntry(
-                      message: m,
-                      isMe: isMe,
-                      showTimestamp: showTimestamp,
-                      peerDisplay: _peerDisplay(),
-                    );
-                  }
-                  return _MessageBubble(
-                    message: m,
-                    isMe: isMe,
-                    showTimestamp: showTimestamp,
-                    // Group threads: say who sent each inbound text.
-                    senderLabel: isGroup && !isMe
-                        ? senderName(members, m.messageParticipant)
-                        : null,
-                  );
-                },
-              );
+              final ownNumber = con.messages?.result?.participants
+                  ?.firstWhere((p) => p.isSelf == true,
+                      orElse: () => Participants())
+                  .number;
+              final peer = _peerDisplay();
+              return Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
+                  child: V360LiveList(
+                    ids: [
+                      for (final m in messages)
+                        (m.itemType ?? 'sms', m.pk ?? m.messageProviderId ?? m)
+                    ],
+                    controller: _scroll,
+                    reverse: true,
+                    padding: const EdgeInsets.only(bottom: V360Spacing.s4),
+                    itemBuilder: (_, i) {
+                      final m = messages[i];
+                      final next =
+                          i + 1 < messages.length ? messages[i + 1] : null;
+                      final isMe = m.messageParticipant == con.myNumber ||
+                          (m.messageParticipant != null &&
+                              m.messageParticipant == ownNumber);
+                      final showTimestamp =
+                          next == null || _shouldShowTimestamp(m, next);
+                      if (m.isCall) {
+                        return _CallTimelineEntry(
+                          message: m,
+                          isMe: isMe,
+                          showTimestamp: showTimestamp,
+                          peerDisplay: peer,
+                        );
+                      }
+                      return _MessageBubble(
+                        message: m,
+                        isMe: isMe,
+                        showTimestamp: showTimestamp,
+                        // Group threads: say who sent each inbound text.
+                        senderLabel: isGroup && !isMe
+                            ? senderName(members, m.messageParticipant)
+                            : null,
+                      );
+                    },
+                  ));
             }),
           ),
           _Composer(controller: con),
@@ -391,16 +407,22 @@ class _MessageBubble extends StatelessWidget {
                             bottom: body.isEmpty ? 0 : V360Spacing.s2),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(V360Radius.lg),
-                          child: Image.network(
-                            message.messageMmsMedia.toString(),
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              padding: const EdgeInsets.all(V360Spacing.s4),
-                              color: cs.surfaceContainerHigh,
-                              child: Text('Image unavailable',
-                                  style: TextStyle(color: cs.onSurface)),
-                            ),
-                          ),
+                          child: AspectRatio(
+                              aspectRatio: 4 / 3,
+                              child: Image.network(
+                                message.messageMmsMedia.toString(),
+                                fit: BoxFit.contain,
+                                frameBuilder: (_, child, frame, loaded) =>
+                                    loaded || frame != null
+                                        ? child
+                                        : V360Skeleton.box(radius: 0),
+                                errorBuilder: (_, __, ___) => Container(
+                                  padding: const EdgeInsets.all(V360Spacing.s4),
+                                  color: cs.surfaceContainerHigh,
+                                  child: Text('Image unavailable',
+                                      style: TextStyle(color: cs.onSurface)),
+                                ),
+                              )),
                         ),
                       ),
                     if (body.isNotEmpty)

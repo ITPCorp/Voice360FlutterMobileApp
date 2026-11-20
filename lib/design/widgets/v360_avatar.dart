@@ -56,21 +56,23 @@ class V360Avatar extends StatelessWidget {
     Widget core = Container(
       width: size,
       height: size,
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: hasImage ? Clip.antiAlias : Clip.none,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: hasImage
-            ? null
-            : LinearGradient(
-                colors: _gradient,
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+        gradient: LinearGradient(
+          colors: _gradient,
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
       ),
       child: hasImage
           ? Image.network(
               imageUrl!,
               fit: BoxFit.cover,
+              cacheWidth:
+                  (size * MediaQuery.devicePixelRatioOf(context)).ceil(),
+              frameBuilder: (_, child, frame, loaded) =>
+                  loaded || frame != null ? child : _fallback(fontSize),
               errorBuilder: (_, __, ___) => _fallback(fontSize),
             )
           : _fallback(fontSize),

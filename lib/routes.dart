@@ -21,7 +21,7 @@ class AppRoutes {
   static List<GetPage<dynamic>> routes = [
     GetPage(
       name: Routes.BASE_SCREEN_ROUTE,
-      page: () => BaseScreen(),
+      page: () => const BaseScreen(),
     ),
     GetPage(
       name: Routes.LOGIN_SCREEN_ROUTE,

@@ -23,13 +23,16 @@ class ProfileScreen extends StatelessWidget {
       ),
       body: Obx(() {
         if (con.isloading.value && con.userProfile == null) {
-          return const Center(
-            child: SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(strokeWidth: 2.4),
-            ),
-          );
+          return ListView(padding: const EdgeInsets.all(16), children: [
+            Center(child: V360Skeleton.circle(size: 72)),
+            const SizedBox(height: 16),
+            Center(child: V360Skeleton.line(width: 144, height: 20)),
+            const SizedBox(height: 32),
+            for (var i = 0; i < 3; i++)
+              Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: V360Skeleton.box(height: 52)),
+          ]);
         }
         if (con.loadFailed.value && con.userProfile == null) {
           return V360EmptyState(
@@ -42,43 +45,47 @@ class ProfileScreen extends StatelessWidget {
                 child: const Text('Try again')),
           );
         }
-        return RefreshIndicator(
-          onRefresh: () async => con.fetchUserProfile(),
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(
-              horizontal: V360Spacing.s4,
-              vertical: V360Spacing.s4,
-            ),
-            children: [
-              _ProfileHeader(con: con),
-              const SizedBox(height: V360Spacing.s6),
-              _SectionLabel(text: 'Account'),
-              const SizedBox(height: V360Spacing.s2),
-              V360Card(
-                padding: EdgeInsets.zero,
-                child: Column(
-                  children: [
-                    _Row(
-                      icon: Icons.alternate_email_rounded,
-                      label: 'Email',
-                      value: con.emailController.text,
-                    ),
-                    const _Sep(),
-                    _Row(
-                      icon: Icons.phone_iphone_rounded,
-                      label: 'Mobile',
-                      value: con.mobileController.text.isEmpty
-                          ? 'Not provided'
-                          : con.mobileController.text,
-                    ),
-                  ],
-                ),
+        return Column(children: [
+          V360RefreshLine(active: con.isloading.value),
+          Expanded(
+              child: RefreshIndicator(
+            onRefresh: () async => con.fetchUserProfile(),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.symmetric(
+                horizontal: V360Spacing.s4,
+                vertical: V360Spacing.s4,
               ),
-              const SizedBox(height: V360Spacing.s10),
-            ],
-          ),
-        );
+              children: [
+                _ProfileHeader(con: con),
+                const SizedBox(height: V360Spacing.s6),
+                _SectionLabel(text: 'Account'),
+                const SizedBox(height: V360Spacing.s2),
+                V360Card(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      _Row(
+                        icon: Icons.alternate_email_rounded,
+                        label: 'Email',
+                        value: con.emailController.text,
+                      ),
+                      const _Sep(),
+                      _Row(
+                        icon: Icons.phone_iphone_rounded,
+                        label: 'Mobile',
+                        value: con.mobileController.text.isEmpty
+                            ? 'Not provided'
+                            : con.mobileController.text,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: V360Spacing.s10),
+              ],
+            ),
+          ))
+        ]);
       }),
     );
   }
