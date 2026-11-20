@@ -138,17 +138,37 @@ class _ContactsScreenState extends State<ContactsScreen> {
             ),
           );
         }
+        if (con.searchFailed) {
+          return V360EmptyState(
+            icon: Icons.cloud_off_outlined,
+            title: 'Could not search contacts',
+            action: TextButton(
+                onPressed: () =>
+                    con.searchContacts(con.searchController.text.trim()),
+                child: const Text('Try again')),
+          );
+        }
         return V360EmptyState(
           icon: Icons.search_off_rounded,
           title: 'No matches',
-          message:
-              'No contacts match "${con.searchController.text.trim()}".',
+          message: 'No contacts match "${con.searchController.text.trim()}".',
+        );
+      }
+      if (con.loadFailed) {
+        return V360EmptyState(
+          icon: Icons.cloud_off_outlined,
+          title: 'Could not load contacts',
+          message: 'Check your connection, then try again.',
+          onRefresh: () => con.fetchContacts('0'),
+          action: TextButton(
+              onPressed: () => con.fetchContacts('0'),
+              child: const Text('Try again')),
         );
       }
       return V360EmptyState(
+        onRefresh: () => con.fetchContacts('0'),
         icon: Icons.people_alt_outlined,
         title: 'No contacts',
-        message: 'Tap the + button to add your first contact.',
         action: V360Button(
           label: 'Add contact',
           leadingIcon: Icons.person_add_alt_1_rounded,
@@ -198,19 +218,25 @@ class _ContactsScreenState extends State<ContactsScreen> {
       ));
     }
 
-    return ListView(
+    final list = ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       controller: _scroll,
       padding: const EdgeInsets.only(bottom: V360Spacing.s10),
       children: items,
     );
+    return isSearching
+        ? list
+        : RefreshIndicator(
+            onRefresh: () => con.fetchContacts('0'), child: list);
   }
 
   Widget _contactRow(Contact c, String name) {
     return V360ListTile(
       leading: V360Avatar(name: name.isEmpty ? '?' : name, size: 44),
-      title: name.isEmpty ? '(No name)' : name,
+      title: name.isEmpty ? (c.phone ?? c.email ?? 'Contact') : name,
       subtitle: c.phone ?? c.email ?? '',
       trailing: IconButton(
+        tooltip: 'Call contact',
         icon: const Icon(
           Icons.call_rounded,
           color: V360Colors.callAccept,

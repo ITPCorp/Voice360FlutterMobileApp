@@ -1,3 +1,4 @@
+import 'package:itp_voice/routes.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
@@ -30,8 +31,8 @@ class _VoiceMailDetailsScreenState extends State<VoiceMailDetailsScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final caller =
-        (vm.callerid ?? '').isNotEmpty ? vm.callerid! : 'Unknown caller';
+    final number = vm.callerid?.trim() ?? '';
+    final caller = number.isEmpty ? 'Caller ID unavailable' : number;
 
     return Scaffold(
       appBar: AppBar(
@@ -56,7 +57,7 @@ class _VoiceMailDetailsScreenState extends State<VoiceMailDetailsScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const SizedBox(height: V360Spacing.s4),
-            Center(child: V360Avatar(name: caller, size: 88)),
+            Center(child: V360Avatar(name: number, size: 88)),
             const SizedBox(height: V360Spacing.s4),
             Text(
               caller,
@@ -72,24 +73,28 @@ class _VoiceMailDetailsScreenState extends State<VoiceMailDetailsScreen> {
             const SizedBox(height: V360Spacing.s6),
             V360Card(
               padding: const EdgeInsets.all(V360Spacing.s4),
-              child: VoiceMailPlayer(id: vm.msgId),
+              child:
+                  VoiceMailPlayer(id: vm.msgId, durationSeconds: vm.duration),
             ),
             const SizedBox(height: V360Spacing.s5),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _action(
-                  icon: Icons.call_rounded,
-                  label: 'Call back',
-                  color: V360Colors.callAccept,
-                  onTap: () => base.handleCall(caller, context),
-                ),
-                _action(
-                  icon: Icons.chat_bubble_rounded,
-                  label: 'Message',
-                  color: V360Colors.primary500,
-                  onTap: () {},
-                ),
+                if (number.isNotEmpty)
+                  _action(
+                    icon: Icons.call_rounded,
+                    label: 'Call back',
+                    color: V360Colors.callAccept,
+                    onTap: () => base.handleCall(caller, context),
+                  ),
+                if (number.isNotEmpty)
+                  _action(
+                    icon: Icons.chat_bubble_rounded,
+                    label: 'Message',
+                    color: cs.primary,
+                    onTap: () => Get.toNamed(Routes.CHAT_SCREEN_ROUTE,
+                        arguments: [null, number]),
+                  ),
                 _action(
                   icon: Icons.delete_outline_rounded,
                   label: 'Delete',

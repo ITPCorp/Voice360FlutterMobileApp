@@ -190,7 +190,7 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
     final tt = Theme.of(context).textTheme;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Message'),
+        title: const Text('New message'),
         leading: IconButton(
           icon: const Icon(Icons.close_rounded),
           onPressed: () => Get.back(),
@@ -403,7 +403,7 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name.isEmpty ? (c.phone ?? 'Unknown') : name,
+                    name.isEmpty ? (c.email ?? 'Contact') : name,
                     style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
                     overflow: TextOverflow.ellipsis,
                   ),

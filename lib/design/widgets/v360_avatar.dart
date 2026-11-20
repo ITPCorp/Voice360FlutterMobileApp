@@ -19,14 +19,14 @@ class V360Avatar extends StatelessWidget {
   });
 
   static const List<List<Color>> _gradients = [
-    [Color(0xFF0EA5E9), Color(0xFF0284C7)], // sky
-    [Color(0xFF22C55E), Color(0xFF15803D)], // green
+    [Color(0xFF0369A1), Color(0xFF075985)], // sky
+    [Color(0xFF15803D), Color(0xFF166534)], // green
     [Color(0xFF7C3AED), Color(0xFF5B21B6)], // purple
-    [Color(0xFFF59E0B), Color(0xFFB45309)], // amber
-    [Color(0xFFEC4899), Color(0xFFBE185D)], // pink
-    [Color(0xFF06B6D4), Color(0xFF0E7490)], // cyan
-    [Color(0xFF8B5CF6), Color(0xFF6D28D9)], // violet
-    [Color(0xFFF43F5E), Color(0xFFB91C1C)], // rose
+    [Color(0xFFB45309), Color(0xFF92400E)], // amber
+    [Color(0xFFBE185D), Color(0xFF9D174D)], // pink
+    [Color(0xFF0E7490), Color(0xFF155E75)], // cyan
+    [Color(0xFF7C3AED), Color(0xFF6D28D9)], // violet
+    [Color(0xFFBE123C), Color(0xFFB91C1C)], // rose
   ];
 
   String get _initials {
@@ -34,9 +34,10 @@ class V360Avatar extends StatelessWidget {
     if (n.isEmpty) return '?';
     final parts = n.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
     if (parts.length == 1) {
-      return parts[0].substring(0, parts[0].length >= 2 ? 2 : 1).toUpperCase();
+      return parts.first.characters.take(2).toString().toUpperCase();
     }
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return (parts.first.characters.first + parts.last.characters.first)
+        .toUpperCase();
   }
 
   List<Color> get _gradient {
@@ -103,6 +104,13 @@ class V360Avatar extends StatelessWidget {
   }
 
   Widget _fallback(double fontSize) {
+    final value = name?.trim() ?? '';
+    if (value.isEmpty ||
+        value == '?' ||
+        RegExp(r'^[+() 0-9.-]+$').hasMatch(value)) {
+      return Icon(Icons.person_outline_rounded,
+          size: size * 0.52, color: Colors.white);
+    }
     return Center(
       child: Text(
         _initials,

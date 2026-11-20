@@ -46,7 +46,7 @@ class _ChatScreenState extends State<ChatScreen> {
       (x) => x.isSelf != true,
       orElse: () => ps.isEmpty ? Participants() : ps.first,
     );
-    return p.number ?? con.threadNumber ?? 'Unknown';
+    return p.number ?? con.threadNumber ?? '';
   }
 
   /// Return the embedded `participant.contact` for the peer of this thread,
@@ -78,7 +78,7 @@ class _ChatScreenState extends State<ChatScreen> {
     // 3. Fall back to a local cache lookup by phone number.
     final peer = _peerNumber();
     final fromCache = ContactResolver.resolveNameOrNull(peer);
-    return fromCache ?? peer;
+    return fromCache ?? (peer.isEmpty ? 'Conversation' : peer);
   }
 
   @override
@@ -93,13 +93,16 @@ class _ChatScreenState extends State<ChatScreen> {
           final _ = con.loadTitle.value;
           final members = con.members;
           final isGroup = isGroupThread(members);
-          final display =
-              isGroup ? groupDisplayName(members) : _peerDisplay();
+          final display = isGroup ? groupDisplayName(members) : _peerDisplay();
           final number = _peerNumber();
-          final showNumber = display != number;
+          final showNumber = number.isNotEmpty && display != number;
           final subtitle = isGroup
               ? '${groupPeopleLabel(members)}: ${groupFullNames(members)}'
-              : (showNumber ? number : 'SMS · From ${con.myNumber}');
+              : (showNumber
+                  ? number
+                  : (con.myNumber.isNotEmpty
+                      ? 'SMS · From ${con.myNumber}'
+                      : 'SMS'));
           return Row(
             children: [
               isGroup
@@ -142,7 +145,9 @@ class _ChatScreenState extends State<ChatScreen> {
               icon:
                   const Icon(Icons.call_rounded, color: V360Colors.callAccept),
               tooltip: 'Call',
-              onPressed: () => base.handleCall(_peerNumber(), context),
+              onPressed: _peerNumber().isEmpty
+                  ? null
+                  : () => base.handleCall(_peerNumber(), context),
             );
           }),
           IconButton(
@@ -151,17 +156,17 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: () => con.isGroup
                 ? _showGroupMembers(context)
                 : Get.toNamed(
-              Routes.CHAT_DETAIL_ROUTE,
-              // Pass both the peer number AND any participant.contact we
-              // already have from the threads list. The (i) controller would
-              // otherwise only know about contacts in the local cache, and
-              // the cache is limited to the contact pages the user has
-              // scrolled through.
-              arguments: {
-                'phone': _peerNumber(),
-                'participantContact': _participantContact(),
-              },
-            ),
+                    Routes.CHAT_DETAIL_ROUTE,
+                    // Pass both the peer number AND any participant.contact we
+                    // already have from the threads list. The (i) controller would
+                    // otherwise only know about contacts in the local cache, and
+                    // the cache is limited to the contact pages the user has
+                    // scrolled through.
+                    arguments: {
+                      'phone': _peerNumber(),
+                      'participantContact': _participantContact(),
+                    },
+                  ),
           ),
         ],
       ),
@@ -381,7 +386,8 @@ class _MessageBubble extends StatelessWidget {
                   children: [
                     if (hasMedia)
                       Padding(
-                        padding: EdgeInsets.only(bottom: body.isEmpty ? 0 : V360Spacing.s2),
+                        padding: EdgeInsets.only(
+                            bottom: body.isEmpty ? 0 : V360Spacing.s2),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(V360Radius.lg),
                           child: Image.network(
@@ -390,7 +396,8 @@ class _MessageBubble extends StatelessWidget {
                             errorBuilder: (_, __, ___) => Container(
                               padding: const EdgeInsets.all(V360Spacing.s4),
                               color: cs.surfaceContainerHigh,
-                              child: const Icon(Icons.broken_image_outlined),
+                              child: Text('Image unavailable',
+                                  style: TextStyle(color: cs.onSurface)),
                             ),
                           ),
                         ),
@@ -486,18 +493,15 @@ class _Composer extends StatelessWidget {
                           vertical: V360Spacing.s3,
                         ),
                         border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(V360Radius.xxl),
+                          borderRadius: BorderRadius.circular(V360Radius.xxl),
                           borderSide: BorderSide.none,
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(V360Radius.xxl),
+                          borderRadius: BorderRadius.circular(V360Radius.xxl),
                           borderSide: BorderSide.none,
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(V360Radius.xxl),
+                          borderRadius: BorderRadius.circular(V360Radius.xxl),
                           borderSide: BorderSide(color: cs.primary, width: 1.5),
                         ),
                       ),
@@ -505,7 +509,14 @@ class _Composer extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: V360Spacing.s2),
-                _SendButton(onTap: controller.sendMessage),
+                ValueListenableBuilder(
+                  valueListenable: controller.messageController,
+                  builder: (_, value, __) => _SendButton(
+                    onTap: value.text.trim().isEmpty
+                        ? null
+                        : controller.sendMessage,
+                  ),
+                ),
               ],
             ),
           ],
@@ -639,22 +650,26 @@ class _FromPicker extends StatelessWidget {
 }
 
 class _SendButton extends StatelessWidget {
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   const _SendButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 44,
-      height: 44,
+      width: 48,
+      height: 48,
       child: Material(
-        color: V360Colors.primary500,
+        color: onTap == null ? cs.surfaceContainerHigh : cs.primary,
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,
-          child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+          child: Icon(Icons.send_rounded,
+              semanticLabel: 'Send message',
+              color: onTap == null ? cs.onSurfaceVariant : cs.onPrimary,
+              size: 20),
         ),
       ),
     );

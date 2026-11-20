@@ -28,6 +28,7 @@ class VoiceMailsController extends GetxController {
   // final player = AudioPlayer();
   Duration? voiceMailDuration;
   bool isVoiceMailsLoading = false;
+  bool loadFailed = false;
   VoiceMailsRepo repo = VoiceMailsRepo();
   TextEditingController searchController = TextEditingController();
 
@@ -50,6 +51,7 @@ class VoiceMailsController extends GetxController {
     update();
 
     final res = await repo.getVoiceMails();
+    loadFailed = res is! GetVoiceMailsResponseModel;
     isVoiceMailsLoading = false;
     if (res is GetVoiceMailsResponseModel) {
       final fresh = res.voiceMails ?? const [];
@@ -85,7 +87,7 @@ class VoiceMailsController extends GetxController {
     }
     if (searchController.text.isNotEmpty) {
       return voiceMails
-          .where((element) => element.callerid!
+          .where((element) => (element.callerid ?? '')
               .toLowerCase()
               .contains(searchController.text.toLowerCase()))
           .toList();

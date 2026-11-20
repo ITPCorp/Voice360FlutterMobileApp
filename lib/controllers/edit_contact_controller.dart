@@ -19,7 +19,10 @@ class EditContactController extends GetxController {
   RxInt phoneNumberCount = 1.obs;
   RxString selectedValues = "Option 1".obs;
   ContactsRepo contactsRepo = ContactsRepo();
-  ContactsController contactsController = Get.find<ContactsController>();
+  final ContactsController contactsController =
+      Get.isRegistered<ContactsController>()
+          ? Get.find<ContactsController>()
+          : Get.put(ContactsController());
   Contact? contact;
   List<String> options = [
     "Option 1",
@@ -41,14 +44,15 @@ class EditContactController extends GetxController {
   ];
   List<Map<String, dynamic>> contactFieldsData = [];
   List<Map<String, dynamic>> emailFieldsData = [];
-  TextEditingController get fullNameController => TextEditingController(text: "${contact!.firstname!} ${contact!.lastname}");
+  TextEditingController get fullNameController => TextEditingController(
+      text: "${contact?.firstname ?? ''} ${contact?.lastname ?? ''}");
 
   @override
   void onInit() {
     // TODO: implement onInit
     super.onInit();
     contact = Get.arguments['contact'];
-    print(contact);
+
     addNewContactField();
     addNewEmailField();
   }
@@ -56,9 +60,8 @@ class EditContactController extends GetxController {
   addNewContactField() async {
     contactFieldsData.add({
       "labelOptions": contactsLabels,
-      "selectedLabel":
-          contactsLabels.indexWhere((element) => element.toLowerCase() == (contact?.notes?.toLowerCase() ?? "work")),
-      "code": "92",
+      "selectedLabel": contactsLabels.indexWhere((element) =>
+          element.toLowerCase() == (contact?.notes?.toLowerCase() ?? "work")),
       "controller": TextEditingController()
     });
     update();
@@ -70,8 +73,7 @@ class EditContactController extends GetxController {
   //       "labelOptions": contactsLabels,
   //       "selectedLabel": contactsLabels.indexWhere((element) =>
   //           element.toLowerCase() == contact!.numbers![i].label!.toLowerCase()),
-  //       "code": "92",
-  //       "controller": TextEditingController()
+  //   //       "controller": TextEditingController()
   //     });
   //     update();
   //   }
@@ -83,8 +85,11 @@ class EditContactController extends GetxController {
   }
 
   addNewEmailField() async {
-    emailFieldsData.add(
-        {"labelOptions": emailLabels, "selectedLabel": 0, "controller": TextEditingController(text: contact!.email!)});
+    emailFieldsData.add({
+      "labelOptions": emailLabels,
+      "selectedLabel": 0,
+      "controller": TextEditingController(text: contact?.email ?? '')
+    });
     update();
   }
 
@@ -119,7 +124,10 @@ class EditContactController extends GetxController {
       for (var i = 0; i < contactFieldsData.length; i++) {
         Number number = Number(
           label: contactsLabels[contactFieldsData[i]['selectedLabel']],
-          number: "+${contactFieldsData[i]['code']}" + contactFieldsData[i]['controller'].text,
+          number: contactFieldsData[i]['controller']
+              .text
+              .toString()
+              .replaceAll(RegExp(r'[\s().-]'), ''),
         );
         numbers.add(number);
       }
@@ -138,8 +146,12 @@ class EditContactController extends GetxController {
       Get.focusScope!.unfocus();
       CustomLoader.showLoader();
       try {
-        var res = await contactsRepo.updateContact(contact!.pk, fullNameController.text, numbers[0].label ?? '',
-            numbers[0].number ?? '', emails[0].email ?? '');
+        var res = await contactsRepo.updateContact(
+            contact!.pk,
+            fullNameController.text,
+            numbers[0].label ?? '',
+            numbers[0].number ?? '',
+            emails[0].email ?? '');
         Get.back();
         if (res.runtimeType == String) {
           CustomToast.showToast(res, true);
@@ -152,7 +164,9 @@ class EditContactController extends GetxController {
         if (res) {
           Get.back();
           CustomToast.showToast("Contact updated successfully", false);
-          contactsController.fetchContacts('0',);
+          contactsController.fetchContacts(
+            '0',
+          );
           return;
         }
       } catch (e) {
@@ -163,7 +177,7 @@ class EditContactController extends GetxController {
   }
 
   validateForms() {
-    RegExp phoneRegexp = RegExp(r'(^(?:[+0]9)?[0-9]{10,12}$)');
+    RegExp phoneRegexp = RegExp(r'^\+?[0-9]{7,15}$');
 
     if (fullNameController.text.isEmpty || fullNameController.text == null) {
       CustomToast.showToast("Please enter contact name", true);
@@ -177,19 +191,23 @@ class EditContactController extends GetxController {
         CustomToast.showToast("Please enter a phone number", true);
         return false;
       }
-      if (!phoneRegexp.hasMatch(contactFieldsData[i]['controller'].text.toString())) {
+      if (!phoneRegexp.hasMatch(contactFieldsData[i]['controller']
+          .text
+          .toString()
+          .replaceAll(RegExp(r'[\s().-]'), ''))) {
         CustomToast.showToast("Please enter a valid phone number", true);
         return false;
       }
     }
 
     for (int i = 0; i < emailFieldsData.length; i++) {
-      if (emailFieldsData[i]['controller'].text.toString().isEmpty || emailFieldsData[i]['controller'].text == null) {
-        CustomToast.showToast("Please enter an email", true);
-        return false;
+      if (emailFieldsData[i]['controller'].text.toString().isEmpty ||
+          emailFieldsData[i]['controller'].text == null) {
+        continue;
       }
 
-      bool isEmailValid = EmailValidator.validate(emailFieldsData[i]['controller'].text);
+      bool isEmailValid =
+          EmailValidator.validate(emailFieldsData[i]['controller'].text);
       if (!isEmailValid) {
         CustomToast.showToast("Please enter a valid email", true);
         return false;

@@ -208,7 +208,7 @@ class BaseScreenController extends GetxController
         helper!.call(number, voiceOnly: voiceonly, mediaStream: mediaStream);
       } catch (e) {
         print('Call failed: $e');
-        CustomToast.showToast('Could not start call: $e', true);
+        CustomToast.showToast('Could not start the call. Check your connection and try again.', true);
       }
       return null;
     }

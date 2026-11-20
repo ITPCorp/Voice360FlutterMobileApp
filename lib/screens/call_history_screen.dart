@@ -121,7 +121,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
         color: selected ? cs.primary : cs.outlineVariant,
       ),
       padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s2),
-      visualDensity: VisualDensity.compact,
+      checkmarkColor: cs.onPrimary,
     );
   }
 
@@ -131,42 +131,60 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
     final earlier = _apply(con.callHistoryList).toList();
 
     if (today.isEmpty && yesterday.isEmpty && earlier.isEmpty) {
-      return const V360EmptyState(
-        icon: Icons.call_outlined,
-        title: 'No calls yet',
-        message: 'Your call history will appear here.',
+      final filtered =
+          con.searchController.text.trim().isNotEmpty || _filter != _Filter.all;
+      return V360EmptyState(
+        icon: con.loadFailed ? Icons.cloud_off_outlined : Icons.call_outlined,
+        title: con.loadFailed
+            ? 'Could not load recent calls'
+            : filtered
+                ? 'No matching calls'
+                : 'No calls yet',
+        message: con.loadFailed
+            ? 'Check your connection, then try again.'
+            : filtered
+                ? 'Try another name, number or filter.'
+                : 'Your call history will appear here.',
+        onRefresh: con.refreshCalls,
+        action: con.loadFailed
+            ? TextButton(
+                onPressed: con.refreshCalls, child: const Text('Try again'))
+            : null,
       );
     }
 
-    return ListView(
-      controller: con.scrollController,
-      padding: const EdgeInsets.only(bottom: V360Spacing.s10),
-      children: [
-        if (today.isNotEmpty) ...[
-          const V360SectionHeader(title: 'TODAY'),
-          ...today.map((c) => _row(context, c)),
-        ],
-        if (yesterday.isNotEmpty) ...[
-          const V360SectionHeader(title: 'YESTERDAY'),
-          ...yesterday.map((c) => _row(context, c)),
-        ],
-        if (earlier.isNotEmpty) ...[
-          const V360SectionHeader(title: 'EARLIER'),
-          ...earlier.map((c) => _row(context, c)),
-        ],
-        if (con.isLoading && con.callHistoryList.isNotEmpty)
-          const Padding(
-            padding: EdgeInsets.all(V360Spacing.s4),
-            child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2.4),
+    return RefreshIndicator(
+        onRefresh: con.refreshCalls,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          controller: con.scrollController,
+          padding: const EdgeInsets.only(bottom: V360Spacing.s10),
+          children: [
+            if (today.isNotEmpty) ...[
+              const V360SectionHeader(title: 'Today'),
+              ...today.map((c) => _row(context, c)),
+            ],
+            if (yesterday.isNotEmpty) ...[
+              const V360SectionHeader(title: 'Yesterday'),
+              ...yesterday.map((c) => _row(context, c)),
+            ],
+            if (earlier.isNotEmpty) ...[
+              const V360SectionHeader(title: 'Earlier'),
+              ...earlier.map((c) => _row(context, c)),
+            ],
+            if (con.isLoading && con.callHistoryList.isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.all(V360Spacing.s4),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                ),
               ),
-            ),
-          ),
-      ],
-    );
+          ],
+        ));
   }
 
   Widget _row(BuildContext context, CallHistory c) {
@@ -186,10 +204,8 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
 
     final name = (c.name ?? '').isNotEmpty
         ? c.name!
-        : (c.numberToDial ?? 'Unknown');
-    final subtitle = (c.name ?? '').isNotEmpty
-        ? c.numberToDial ?? ''
-        : '';
+        : (c.numberToDial ?? 'Caller ID unavailable');
+    final subtitle = (c.name ?? '').isNotEmpty ? c.numberToDial ?? '' : '';
     final time = _formatTime(c.time);
 
     final hasMedia = c.hasRecording || c.hasTranscript;
@@ -201,7 +217,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
           '${(c.duration != null && c.duration! > 0) ? ' • ${_formatDuration(c.duration!)}' : ''}',
       titleStyle: TextStyle(
         fontWeight: FontWeight.w600,
-        color: missed ? V360Colors.callMissed : null,
+        color: missed ? Theme.of(context).colorScheme.error : null,
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -210,8 +226,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
                   color:
                       Theme.of(context).colorScheme.primary.withOpacity(0.12),
@@ -273,14 +288,15 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
       builder: (sheetCtx) {
         final name = (c.name ?? '').isNotEmpty
             ? c.name!
-            : (c.numberToDial ?? 'Unknown');
+            : (c.numberToDial ?? 'Caller ID unavailable');
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
                 leading: V360Avatar(name: name, size: 36),
-                title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                title: Text(name,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
                 subtitle: Text(
                   '${_typeLabel(missed: (c.isMissed ?? false) && (c.isIncoming ?? false), inbound: c.isIncoming ?? false)}'
                   '${(c.duration != null && c.duration! > 0) ? ' • ${_formatDuration(c.duration!)}' : ''}',
@@ -291,8 +307,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
                 leading: const Icon(Icons.call_rounded,
                     color: V360Colors.callAccept),
                 title: const Text('Call back'),
-                enabled:
-                    c.numberToDial != null && c.numberToDial!.isNotEmpty,
+                enabled: c.numberToDial != null && c.numberToDial!.isNotEmpty,
                 onTap: () {
                   Navigator.of(sheetCtx).pop();
                   if (c.numberToDial != null && c.numberToDial!.isNotEmpty) {

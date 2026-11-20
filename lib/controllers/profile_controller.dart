@@ -12,6 +12,7 @@ class ProfileController extends GetxController {
   }
 
   RxBool isloading = false.obs;
+  final loadFailed = false.obs;
   Profile? userProfile;
   TextEditingController nameController = TextEditingController();
   TextEditingController emailController = TextEditingController(text: '');
@@ -25,7 +26,8 @@ class ProfileController extends GetxController {
     isloading.value = true;
 
     final res = await repo.getProfile();
-    if (res.runtimeType == UserProfile) {
+    loadFailed.value = res is! UserProfile || res.profile == null;
+    if (res is UserProfile) {
       UserProfile model = res;
       userProfile = model.profile;
       nameController.text = (userProfile?.firstname ?? '') +

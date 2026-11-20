@@ -31,9 +31,21 @@ class ProfileScreen extends StatelessWidget {
             ),
           );
         }
+        if (con.loadFailed.value && con.userProfile == null) {
+          return V360EmptyState(
+            icon: Icons.cloud_off_outlined,
+            title: 'Could not load your profile',
+            message: 'Check your connection, then try again.',
+            onRefresh: () async => con.fetchUserProfile(),
+            action: TextButton(
+                onPressed: con.fetchUserProfile,
+                child: const Text('Try again')),
+          );
+        }
         return RefreshIndicator(
           onRefresh: () async => con.fetchUserProfile(),
           child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(
               horizontal: V360Spacing.s4,
               vertical: V360Spacing.s4,
@@ -41,7 +53,7 @@ class ProfileScreen extends StatelessWidget {
             children: [
               _ProfileHeader(con: con),
               const SizedBox(height: V360Spacing.s6),
-              _SectionLabel(text: 'ACCOUNT'),
+              _SectionLabel(text: 'Account'),
               const SizedBox(height: V360Spacing.s2),
               V360Card(
                 padding: EdgeInsets.zero,
@@ -57,7 +69,7 @@ class ProfileScreen extends StatelessWidget {
                       icon: Icons.phone_iphone_rounded,
                       label: 'Mobile',
                       value: con.mobileController.text.isEmpty
-                          ? '—'
+                          ? 'Not provided'
                           : con.mobileController.text,
                     ),
                   ],
@@ -122,16 +134,16 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name.isEmpty ? '(No name)' : name,
+                  name.isEmpty ? 'Your profile' : name,
                   style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   email,
                   style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -199,7 +211,7 @@ class _Row extends StatelessWidget {
                 Text(
                   value,
                   style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],

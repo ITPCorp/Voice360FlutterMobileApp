@@ -43,11 +43,11 @@ class SettingsScreen extends StatelessWidget {
             vertical: V360Spacing.s4,
           ),
           children: [
-            _sectionLabel(context, 'APPEARANCE'),
+            _sectionLabel(context, 'Appearance'),
             const SizedBox(height: V360Spacing.s2),
             _appearanceCard(context, settings),
             const SizedBox(height: V360Spacing.s6),
-            _sectionLabel(context, 'CALL FORWARDING'),
+            _sectionLabel(context, 'Call forwarding'),
             const SizedBox(height: V360Spacing.s2),
             _masterForwardCard(context, call),
             Obx(() => call.callForwarding.value
@@ -59,21 +59,21 @@ class SettingsScreen extends StatelessWidget {
                   )
                 : const SizedBox.shrink()),
             const SizedBox(height: V360Spacing.s6),
-            _sectionLabel(context, 'CALLER ID'),
+            _sectionLabel(context, 'Caller ID'),
             const SizedBox(height: V360Spacing.s2),
             _callerIdCard(context, call),
             const SizedBox(height: V360Spacing.s6),
-            _sectionLabel(context, 'CALL RECORDING'),
+            _sectionLabel(context, 'Call recording'),
             const SizedBox(height: V360Spacing.s2),
             _recordingCard(context, call),
             const SizedBox(height: V360Spacing.s6),
-            _sectionLabel(context, 'ACCOUNT'),
+            _sectionLabel(context, 'Account'),
             const SizedBox(height: V360Spacing.s2),
             V360Card(
               padding: EdgeInsets.zero,
               child: _NavRow(
                 icon: Icons.lock_outline_rounded,
-                label: 'Change password',
+                label: 'Reset password',
                 onTap: () => Get.toNamed(Routes.CHANGE_PASSWORD_ROUTE),
               ),
             ),
@@ -115,7 +115,7 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: V360Spacing.s2),
             Text(
-              'Follow the device theme, or pick a fixed look.',
+              'Choose how Voice360 looks on this device.',
               style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
             ),
             const SizedBox(height: V360Spacing.s3),
@@ -155,7 +155,7 @@ class SettingsScreen extends StatelessWidget {
             iconBg: const Color(0xFFDBEAFE),
             iconColor: const Color(0xFF2563EB),
             icon: Icons.phone_forwarded_rounded,
-            title: 'Enable Call Forwarding',
+            title: 'Enable call forwarding',
             description:
                 'Enabling this option will forward any incoming calls to your user and will not ring any of your devices, including the web phone.',
             value: con.callForwarding.value,
@@ -164,7 +164,8 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _forwardSettingsCard(BuildContext context, CallSettingsController con) {
+  Widget _forwardSettingsCard(
+      BuildContext context, CallSettingsController con) {
     final cs = Theme.of(context).colorScheme;
     return V360Card(
       padding: EdgeInsets.zero,
@@ -192,7 +193,7 @@ class SettingsScreen extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Call Forward Settings',
+                  'Forwarding settings',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
@@ -216,7 +217,7 @@ class SettingsScreen extends StatelessWidget {
                   iconBg: const Color(0xFFDBEAFE),
                   iconColor: const Color(0xFF2563EB),
                   icon: Icons.info_outline_rounded,
-                  title: 'Forward the call to:',
+                  title: 'Forward calls to',
                   description:
                       'You can enter an extension number or a phone number to forward calls to',
                 ),
@@ -236,7 +237,7 @@ class SettingsScreen extends StatelessWidget {
                       icon: Icons.person_outline_rounded,
                       iconBg: const Color(0xFFDBEAFE),
                       iconColor: const Color(0xFF2563EB),
-                      title: 'Keep Original Caller ID',
+                      title: 'Keep original caller ID',
                       description:
                           "If enabled, this will show the caller's phone number on your screen. If disabled, the number that appears will either be the default caller ID or your customized outbound caller ID number.",
                       value: con.keepOriginalCallerId.value,
@@ -286,7 +287,7 @@ class SettingsScreen extends StatelessWidget {
                 iconBg: const Color(0xFFFEF3C7),
                 iconColor: const Color(0xFFB45309),
                 icon: Icons.badge_outlined,
-                title: 'Override default Caller ID',
+                title: 'Override default caller ID',
                 description:
                     'Enabling this option will force your devices to use a specific phone number when placing a call.',
                 value: on,
@@ -308,8 +309,9 @@ class SettingsScreen extends StatelessWidget {
                       iconBg: const Color(0xFFDBEAFE),
                       iconColor: const Color(0xFF2563EB),
                       icon: Icons.info_outline_rounded,
-                      title: 'Caller ID Number',
-                      description: 'Select the number to use for outbound calls',
+                      title: 'Caller ID number',
+                      description:
+                          'Select the number to use for outbound calls',
                     ),
                     const SizedBox(height: V360Spacing.s3),
                     _callerIdNumberPicker(context, con),
@@ -322,7 +324,7 @@ class SettingsScreen extends StatelessWidget {
                       iconBg: const Color(0xFFDBEAFE),
                       iconColor: const Color(0xFF2563EB),
                       icon: Icons.info_outline_rounded,
-                      title: 'Caller ID Name',
+                      title: 'Caller ID name',
                       description:
                           'Type the name that appears when placing outbound calls',
                     ),
@@ -332,7 +334,8 @@ class SettingsScreen extends StatelessWidget {
                       maxLength: 15,
                       decoration: const InputDecoration(
                         hintText: 'Enter caller ID name',
-                        prefixIcon: Icon(Icons.person_outline_rounded, size: 20),
+                        prefixIcon:
+                            Icon(Icons.person_outline_rounded, size: 20),
                         counterText: 'Maximum 15 characters',
                       ),
                       onSubmitted: (_) => con.saveCallerIdName(),
@@ -425,15 +428,14 @@ class SettingsScreen extends StatelessWidget {
   String _labelForSelected(CallSettingsController con) {
     final num = con.selectedCallerIdNumber.value;
     if (num.isEmpty) return 'Select a number';
-    final match =
-        con.assignedNumbers.firstWhereOrNull((n) => n.number == num);
+    final match = con.assignedNumbers.firstWhereOrNull((n) => n.number == num);
     if (match != null) return match.label;
     // Account-level default that isn't in the user's assigned numbers list —
     // valid inherited fallback, not an orphan.
     if (num == con.accountDefaultCallerIdNumber.value) {
       return '${AssignedNumber.formatPhone(num)} (Account default)';
     }
-    return '${AssignedNumber.formatPhone(num)} (Number Not Available - Please Reassign)';
+    return '${AssignedNumber.formatPhone(num)} (Number unavailable. Select another number.)';
   }
 
   void _showNumberPicker(BuildContext context, CallSettingsController con) {
@@ -476,7 +478,8 @@ class SettingsScreen extends StatelessWidget {
                       if (con.hasOrphanedCallerId)
                         AssignedNumber(
                           number: con.selectedCallerIdNumber.value,
-                          description: 'Number Not Available - Please Reassign',
+                          description:
+                              'Number unavailable. Select another number.',
                         ),
                       if (hasAcctOption)
                         AssignedNumber(
@@ -493,7 +496,7 @@ class SettingsScreen extends StatelessWidget {
                       itemBuilder: (_, i) {
                         final n = items[i];
                         final isOrphan = n.description ==
-                            'Number Not Available - Please Reassign';
+                            'Number unavailable. Select another number.';
                         final isSelected =
                             n.number == con.selectedCallerIdNumber.value;
                         return ListTile(
@@ -501,9 +504,8 @@ class SettingsScreen extends StatelessWidget {
                             isOrphan
                                 ? Icons.warning_amber_rounded
                                 : Icons.phone_outlined,
-                            color: isOrphan
-                                ? const Color(0xFFDC2626)
-                                : cs.primary,
+                            color:
+                                isOrphan ? const Color(0xFFDC2626) : cs.primary,
                           ),
                           title: Text(
                             n.label,

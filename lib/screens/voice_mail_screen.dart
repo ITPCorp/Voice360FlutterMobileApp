@@ -58,15 +58,32 @@ class _VoiceMailScreenState extends State<VoiceMailScreen> {
     final List<VoiceMails> data =
         (con.getDataList() ?? const <VoiceMails>[]) as List<VoiceMails>;
     if (data.isEmpty) {
-      return const V360EmptyState(
-        icon: Icons.voicemail_outlined,
-        title: 'No voicemails',
-        message: 'Missed calls with messages will appear here.',
+      final searching = con.searchController.text.trim().isNotEmpty;
+      return V360EmptyState(
+        icon: con.loadFailed
+            ? Icons.cloud_off_outlined
+            : Icons.voicemail_outlined,
+        title: con.loadFailed
+            ? 'Could not load voicemail'
+            : searching
+                ? 'No matching voicemail'
+                : 'No voicemail yet',
+        message: con.loadFailed
+            ? 'Check your connection, then try again.'
+            : searching
+                ? 'Try another name or number.'
+                : 'Messages from callers will appear here.',
+        onRefresh: () async => con.fetchVoiceMails(),
+        action: con.loadFailed
+            ? TextButton(
+                onPressed: con.fetchVoiceMails, child: const Text('Try again'))
+            : null,
       );
     }
     return RefreshIndicator(
       onRefresh: () async => con.fetchVoiceMails(),
       child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: V360Spacing.s10),
         itemCount: data.length,
         separatorBuilder: (_, __) => Divider(
@@ -80,21 +97,27 @@ class _VoiceMailScreenState extends State<VoiceMailScreen> {
   }
 
   Widget _row(VoiceMails v, int index) {
-    final caller = (v.callerid ?? '').isNotEmpty ? v.callerid! : 'Unknown';
+    final caller =
+        (v.callerid ?? '').isNotEmpty ? v.callerid! : 'Caller ID unavailable';
     final time = _formatTime(v.origtime);
     final dur = _formatDuration(v.duration);
     return V360ListTile(
-      leading: V360Avatar(name: caller, size: 48),
+      leading: V360Avatar(name: v.callerid, size: 48),
       title: caller,
       subtitle: '$time${dur.isNotEmpty ? '  ·  $dur' : ''}',
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            icon: const Icon(Icons.call_rounded, color: V360Colors.callAccept),
-            onPressed: () => base.handleCall(caller, context),
+            tooltip: 'Call back',
+            icon: const Icon(Icons.call_rounded),
+            color: V360Colors.callAccept,
+            onPressed: v.callerid?.trim().isNotEmpty == true
+                ? () => base.handleCall(v.callerid!, context)
+                : null,
           ),
           IconButton(
+            tooltip: 'Open voicemail',
             icon: Icon(
               Icons.play_circle_fill_rounded,
               color: Theme.of(context).colorScheme.primary,

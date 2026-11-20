@@ -22,7 +22,7 @@ class V360SearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Container(
-      height: 44,
+      constraints: const BoxConstraints(minHeight: 48),
       decoration: BoxDecoration(
         color: cs.surfaceContainer,
         borderRadius: BorderRadius.circular(V360Radius.lg),
@@ -40,13 +40,17 @@ class V360SearchField extends StatelessWidget {
           enabledBorder: InputBorder.none,
           focusedBorder: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
-          prefixIcon: Icon(Icons.search_rounded, size: 20, color: cs.onSurfaceVariant),
-          prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+          prefixIcon:
+              Icon(Icons.search_rounded, size: 20, color: cs.onSurfaceVariant),
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 40, minHeight: 40),
           hintText: hintText,
           hintStyle: TextStyle(color: cs.onSurfaceVariant),
           suffixIcon: (controller?.text.isNotEmpty == true && onClear != null)
               ? IconButton(
-                  icon: Icon(Icons.close_rounded, size: 18, color: cs.onSurfaceVariant),
+                  tooltip: 'Clear search',
+                  icon: Icon(Icons.close_rounded,
+                      size: 18, color: cs.onSurfaceVariant),
                   onPressed: onClear,
                 )
               : null,

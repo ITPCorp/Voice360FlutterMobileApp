@@ -22,7 +22,7 @@ class CallScreen extends StatelessWidget {
 
   String _peerName() {
     final id = con.call?.remote_identity ?? '';
-    if (id.isEmpty) return 'Unknown';
+    if (id.isEmpty) return 'Caller ID unavailable';
     final m = RegExp(r'"([^"]+)"').firstMatch(id);
     if (m != null) return m.group(1)!;
     final m2 = RegExp(r'sip:([^@]+)').firstMatch(id);
@@ -50,7 +50,15 @@ class CallScreen extends StatelessWidget {
             ),
           ),
           child: SafeArea(
-            child: Obx(() => _buildContent(context)),
+            child: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child:
+                      IntrinsicHeight(child: Obx(() => _buildContent(context))),
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -64,74 +72,93 @@ class CallScreen extends StatelessWidget {
 
     return Column(
       children: [
-        const SizedBox(height: V360Spacing.s5),
-        // Status pill
-        Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: V360Spacing.s3,
-            vertical: 6,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(V360Radius.full),
-            border:
-                Border.all(color: Colors.white.withOpacity(0.16)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: V360Colors.success500,
-                  shape: BoxShape.circle,
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            if (Navigator.of(context).canPop())
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  tooltip: 'Minimize call',
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                      color: Colors.white),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                _statusText(incoming),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: V360Spacing.s3,
+                vertical: 6,
               ),
-            ],
-          ),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(V360Radius.full),
+                border: Border.all(color: Colors.white.withOpacity(0.16)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: V360Colors.success500,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    _statusText(incoming),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: V360Spacing.s10),
+        const SizedBox(height: V360Spacing.s6),
 
         // Avatar + name
-        V360Avatar(name: peer, size: 128),
+        if (!con.showNumpad.value) V360Avatar(name: peer, size: 96),
         const SizedBox(height: V360Spacing.s5),
-        Text(
-          peer,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 28,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.4,
-          ),
-          textAlign: TextAlign.center,
-        ),
+        Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              peer,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.4,
+              ),
+              textAlign: TextAlign.center,
+            )),
         const SizedBox(height: V360Spacing.s2),
-        Text(
-          con.timeLabel.value.isEmpty ? '—' : con.timeLabel.value,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            letterSpacing: 1,
+        if (con.timeLabel.value.isNotEmpty)
+          Text(
+            con.timeLabel.value,
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.7),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 1,
+            ),
           ),
-        ),
 
         const Spacer(),
 
         // Dialpad overlay
         if (con.showNumpad.value)
-          _CallDialpad(onKey: (d) => con.handleDtmf(d), onClose: () => con.showNumpad.value = false),
+          _CallDialpad(
+              onKey: (d) => con.handleDtmf(d),
+              onClose: () => con.showNumpad.value = false),
 
         // Action buttons
         if (!con.showNumpad.value)
@@ -145,17 +172,17 @@ class CallScreen extends StatelessWidget {
   }
 
   String _statusText(bool incoming) {
-    if (incoming) return 'INCOMING';
+    if (incoming) return 'Incoming';
     final s = con.state.value;
-    if (s == CallStateEnum.CALL_INITIATION) return 'CALLING';
-    if (s == CallStateEnum.CONNECTING) return 'CONNECTING';
-    if (s == CallStateEnum.PROGRESS) return 'RINGING';
+    if (s == CallStateEnum.CALL_INITIATION) return 'Calling';
+    if (s == CallStateEnum.CONNECTING) return 'Connecting';
+    if (s == CallStateEnum.PROGRESS) return 'Ringing';
     if (s == CallStateEnum.ACCEPTED || s == CallStateEnum.CONFIRMED) {
-      return con.hold.value ? 'ON HOLD' : 'IN CALL';
+      return con.hold.value ? 'On hold' : 'In call';
     }
-    if (s == CallStateEnum.ENDED) return 'CALL ENDED';
-    if (s == CallStateEnum.FAILED) return 'CALL FAILED';
-    return 'CALL';
+    if (s == CallStateEnum.ENDED) return 'Call ended';
+    if (s == CallStateEnum.FAILED) return 'Call failed';
+    return 'Call';
   }
 
   static IconData _routeIcon(String r) => switch (r) {
@@ -212,12 +239,14 @@ class CallScreen extends StatelessWidget {
           icon: Icons.call_end_rounded,
           color: V360Colors.callDecline,
           size: 72,
+          label: 'Decline',
           onTap: () => con.handleHangup(goBack: true),
         ),
         _RoundIconButton(
           icon: Icons.call_rounded,
           color: V360Colors.callAccept,
           size: 72,
+          label: 'Answer',
           onTap: con.handleAccept,
         ),
       ],
@@ -230,54 +259,60 @@ class CallScreen extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _ToggleButton(
+            Expanded(
+                child: _ToggleButton(
               icon: con.audioMuted.value
                   ? Icons.mic_off_rounded
                   : Icons.mic_rounded,
               label: con.audioMuted.value ? 'Unmute' : 'Mute',
               active: con.audioMuted.value,
               onTap: con.muteAudio,
-            ),
-            _ToggleButton(
+            )),
+            Expanded(
+                child: _ToggleButton(
               icon: Icons.dialpad_rounded,
               label: 'Keypad',
               active: con.showNumpad.value,
               onTap: () => con.showNumpad.value = !con.showNumpad.value,
-            ),
-            _ToggleButton(
+            )),
+            Expanded(
+                child: _ToggleButton(
               icon: _routeIcon(con.active.route.value),
               label: con.active.hasRouteChoice
                   ? _routeLabel(con.active.route.value)
                   : 'Speaker',
               active: con.active.route.value == 'speaker',
               onTap: _onAudioTap,
-            ),
+            )),
           ],
         ),
         const SizedBox(height: V360Spacing.s5),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _ToggleButton(
+            Expanded(
+                child: _ToggleButton(
               icon: Icons.pause_rounded,
               label: con.hold.value ? 'Resume' : 'Hold',
               active: con.hold.value,
               onTap: con.handleHold,
-            ),
-            _ToggleButton(
+            )),
+            Expanded(
+                child: _ToggleButton(
               icon: Icons.fiber_manual_record_rounded,
               label: 'Record',
               active: false,
               onTap: () {},
               disabled: true,
-            ),
-            _ToggleButton(
+            )),
+            Expanded(
+                child: _ToggleButton(
               icon: Icons.add_rounded,
               label: 'Add call',
               active: false,
               onTap: () {},
               disabled: true,
-            ),
+            )),
           ],
         ),
         const SizedBox(height: V360Spacing.s8),
@@ -285,6 +320,7 @@ class CallScreen extends StatelessWidget {
           icon: Icons.call_end_rounded,
           color: V360Colors.callDecline,
           size: 72,
+          label: 'End call',
           onTap: () => con.handleHangup(goBack: true),
         ),
       ],
@@ -389,11 +425,15 @@ class _ToggleButtonState extends State<_ToggleButton> {
             color: widget.disabled
                 ? Colors.white.withOpacity(0.4)
                 : Colors.white.withOpacity(0.85),
-            fontSize: 11,
+            fontFamily: 'Noto Sans',
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             letterSpacing: 0.4,
           ),
-          child: Text(widget.label),
+          child: Text(widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center),
         ),
       ],
     );
@@ -404,11 +444,13 @@ class _RoundIconButton extends StatefulWidget {
   final IconData icon;
   final Color color;
   final double size;
+  final String label;
   final VoidCallback onTap;
   const _RoundIconButton({
     required this.icon,
     required this.color,
     required this.size,
+    required this.label,
     required this.onTap,
   });
 
@@ -421,36 +463,42 @@ class _RoundIconButtonState extends State<_RoundIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedScale(
-      scale: _pressed ? 0.9 : 1.0,
-      duration: const Duration(milliseconds: 90),
-      curve: Curves.easeOut,
-      child: SizedBox(
-        width: widget.size,
-        height: widget.size,
-        child: Material(
-          color: widget.color,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          elevation: _pressed ? 2 : 8,
-          shadowColor: widget.color.withOpacity(0.5),
-          animationDuration: const Duration(milliseconds: 120),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            splashColor: Colors.white.withOpacity(0.18),
-            highlightColor: Colors.transparent,
-            onTapDown: (_) => setState(() => _pressed = true),
-            onTapCancel: () => setState(() => _pressed = false),
-            onTapUp: (_) => setState(() => _pressed = false),
-            onTap: () {
-              HapticFeedback.mediumImpact();
-              widget.onTap();
-            },
-            child: Icon(widget.icon, color: Colors.white, size: widget.size * 0.45),
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      AnimatedScale(
+        scale: _pressed ? 0.9 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        child: SizedBox(
+          width: widget.size,
+          height: widget.size,
+          child: Material(
+            color: widget.color,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            elevation: _pressed ? 2 : 8,
+            shadowColor: widget.color.withOpacity(0.5),
+            animationDuration: const Duration(milliseconds: 120),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              splashColor: Colors.white.withOpacity(0.18),
+              highlightColor: Colors.transparent,
+              onTapDown: (_) => setState(() => _pressed = true),
+              onTapCancel: () => setState(() => _pressed = false),
+              onTapUp: (_) => setState(() => _pressed = false),
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                widget.onTap();
+              },
+              child: Icon(widget.icon,
+                  color: Colors.white, size: widget.size * 0.45),
+            ),
           ),
         ),
       ),
-    );
+      const SizedBox(height: 4),
+      Text(widget.label,
+          style: const TextStyle(color: Colors.white, fontSize: 14)),
+    ]);
   }
 }
 

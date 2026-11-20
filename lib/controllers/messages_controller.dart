@@ -30,6 +30,7 @@ class MessagesController extends GetxController {
   RxBool isloading = false.obs;
 
   /// True while the bottom-of-list "load more" request is in flight.
+  final loadFailed = false.obs;
   RxBool isLoadingMore = false.obs;
 
   /// Offset for the NEXT page to request. Reset to 0 on refresh / number-swap.
@@ -75,6 +76,7 @@ class MessagesController extends GetxController {
     // No texting number assigned: there is nothing to ask the API for (the
     // URL without a number is a 404), so show the empty state.
     if (from.isEmpty) {
+      loadFailed.value = false;
       allThreads.clear();
       _reachedEnd = true;
       isloading.value = false;
@@ -82,6 +84,7 @@ class MessagesController extends GetxController {
     }
 
     final res = await repo.getMessageThreads(from, offset: 0);
+    loadFailed.value = res is! GetMessageThreadsResponseModel;
     if (res is GetMessageThreadsResponseModel) {
       final fresh = res.result?.messageThreads ?? const <MessageThreads>[];
       allThreads.assignAll(fresh);

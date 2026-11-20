@@ -26,17 +26,18 @@ class ContactResolver {
     final members = membersOfThread(thread);
     if (isGroupThread(members)) return groupDisplayName(members);
     final peer = _peerOf(thread);
-    if (peer == null) return _phoneOf(thread) ?? 'Unknown';
+    if (peer == null) return _phoneOf(thread) ?? 'Conversation';
     final embedded = peer.contactName;
     if (embedded != null && embedded.isNotEmpty) return embedded;
     final local = _matchLocalByPhone(peer.number);
     if (local != null) return local;
-    return peer.number ?? 'Unknown';
+    return peer.number ?? 'Conversation';
   }
 
   /// Same logic, but for an arbitrary phone string — used by the chat header
   /// and contact-tap-to-message flow.
-  static String resolveByPhone(String? phone, {String fallback = 'Unknown'}) {
+  static String resolveByPhone(String? phone,
+      {String fallback = 'Number unavailable'}) {
     if (phone == null || phone.isEmpty) return fallback;
     final local = _matchLocalByPhone(phone);
     if (local != null) return local;

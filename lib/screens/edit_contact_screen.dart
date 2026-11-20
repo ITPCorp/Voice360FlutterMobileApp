@@ -21,6 +21,9 @@ class _EditContactScreenState extends State<EditContactScreen> {
   void initState() {
     super.initState();
     final Contact c = con.contact ?? Contact();
+    _label = con.contactsLabels.firstWhere(
+        (label) => label.toLowerCase() == c.notes?.toLowerCase(),
+        orElse: () => 'Mobile');
     _firstName = TextEditingController(text: c.firstname ?? '');
     _lastName = TextEditingController(text: c.lastname ?? '');
     if (c.phone != null &&
@@ -57,15 +60,6 @@ class _EditContactScreenState extends State<EditContactScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Edit contact'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            child: const Text(
-              'Save',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
       ),
       body: GetBuilder<EditContactController>(
         builder: (_) {
@@ -82,9 +76,7 @@ class _EditContactScreenState extends State<EditContactScreen> {
               children: [
                 Center(
                   child: V360Avatar(
-                    name: '${_firstName.text} ${_lastName.text}'
-                            .trim()
-                            .isEmpty
+                    name: '${_firstName.text} ${_lastName.text}'.trim().isEmpty
                         ? '?'
                         : '${_firstName.text} ${_lastName.text}',
                     size: 96,
@@ -97,7 +89,6 @@ class _EditContactScreenState extends State<EditContactScreen> {
                   controller: _firstName,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(hintText: 'First name'),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: V360Spacing.s4),
@@ -107,7 +98,6 @@ class _EditContactScreenState extends State<EditContactScreen> {
                   controller: _lastName,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(hintText: 'Last name'),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: V360Spacing.s5),
@@ -145,7 +135,7 @@ class _EditContactScreenState extends State<EditContactScreen> {
                         controller: phoneCtrl,
                         keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(
-                          hintText: '(555) 123-4567',
+                          hintText: '+1 202 555 0148',
                           prefixIcon: Icon(Icons.phone_outlined, size: 20),
                         ),
                       ),
@@ -153,7 +143,7 @@ class _EditContactScreenState extends State<EditContactScreen> {
                   ],
                 ),
                 const SizedBox(height: V360Spacing.s5),
-                _label_('Email'),
+                _label_('Email (optional)'),
                 const SizedBox(height: V360Spacing.s2),
                 TextField(
                   controller: emailCtrl,

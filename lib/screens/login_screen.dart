@@ -17,8 +17,6 @@ const Color _kBrandPurple700 = Color(0xFF7E22CE);
 const Color _kBrandIndigo950 = Color(0xFF1E1B4B);
 const Color _kBrandIndigo900 = Color(0xFF312E81);
 
-const String _kWebAppUrl = 'https://app.voice360.app';
-
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -44,13 +42,17 @@ class _LoginScreenState extends State<LoginScreen> {
         // Test builds made with --dart-define=V360_ENV=dev talk to the dev stack.
         bottomNavigationBar: Config.isDev
             ? Container(
-                color: Colors.orange,
-                padding: const EdgeInsets.all(6),
+                color: const Color(0xFFFEF3C7),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: const SafeArea(
                   top: false,
-                  child: Text('DEV BACKEND (api.itpscorp.com/dev)',
+                  child: Text('Dev backend · api.itpscorp.com/dev',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.black, fontWeight: FontWeight.w600)),
+                      style: TextStyle(
+                          color: Color(0xFF78350F),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
                 ),
               )
             : null,
@@ -94,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 boxShadow: V360Shadows.md,
               ),
               alignment: Alignment.center,
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(12),
               child: Image.asset(
                 'assets/images/v360_logo_purp.png',
                 fit: BoxFit.contain,
@@ -180,15 +182,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: V360Spacing.s6),
                   Center(
                     child: Text(
-                      'Welcome Back',
-                      style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                      'Welcome back',
+                      style: tt.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
                   const SizedBox(height: V360Spacing.s1),
                   Center(
                     child: Text(
-                      'Sign in to your Voice360 account to continue',
-                      style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                      'Sign in to your Voice360 account',
+                      style:
+                          tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
                       textAlign: TextAlign.center,
                     ),
                   ),
@@ -198,7 +202,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextField(
                     controller: con.emailController,
                     keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.username, AutofillHints.email],
+                    autofillHints: const [
+                      AutofillHints.username,
+                      AutofillHints.email
+                    ],
                     autocorrect: false,
                     textInputAction: TextInputAction.next,
                     onChanged: (_) {
@@ -207,7 +214,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       }
                     },
                     decoration: const InputDecoration(
-                      hintText: 'you@company.com',
                       prefixIcon: Icon(Icons.alternate_email_rounded, size: 20),
                     ),
                   ),
@@ -226,9 +232,10 @@ class _LoginScreenState extends State<LoginScreen> {
                       }
                     },
                     decoration: InputDecoration(
-                      hintText: 'Enter your password',
-                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                      prefixIcon:
+                          const Icon(Icons.lock_outline_rounded, size: 20),
                       suffixIcon: IconButton(
+                        tooltip: _obscure ? 'Show password' : 'Hide password',
                         icon: Icon(
                           _obscure
                               ? Icons.visibility_outlined
@@ -242,20 +249,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: V360Spacing.s3),
                   // Stay signed in: the login is kept in the phone's secure
                   // store and used again when the session expires (#53034).
-                  Obx(() => Row(
-                        children: [
-                          Checkbox(
-                            value: con.isRemember.value,
-                            onChanged: (v) => con.isRemember.value = v ?? false,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(V360Radius.base),
-                            ),
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          const SizedBox(width: V360Spacing.s1),
-                          Text('Remember me', style: Theme.of(context).textTheme.bodyMedium),
-                        ],
+                  Obx(() => CheckboxListTile(
+                        value: con.isRemember.value,
+                        onChanged: (v) => con.isRemember.value = v ?? false,
+                        title: const Text('Remember me'),
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
                       )),
                   Obx(() {
                     final err = con.errorMessage.value;
@@ -267,7 +266,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   }),
                   const SizedBox(height: V360Spacing.s5),
                   Obx(() => _PrimaryButton(
-                        label: con.isLoading.value ? 'Signing In…' : 'Sign In',
+                        label: con.isLoading.value ? 'Signing in…' : 'Sign in',
                         loading: con.isLoading.value,
                         onPressed: con.isLoading.value ? null : con.login,
                       )),
@@ -290,16 +289,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             : () => con.loginWithSso('microsoft'),
                       )),
                   const SizedBox(height: V360Spacing.s5),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
                     children: [
                       _FooterLink(
-                        label: 'Forgot Password?',
+                        label: 'Forgot password?',
                         onTap: () => _launchWeb('/reset-pw'),
                       ),
                       const SizedBox(width: V360Spacing.s4),
                       _FooterLink(
-                        label: 'Create Account',
+                        label: 'Create account',
                         onTap: () => _launchWeb('/Sign-Up'),
                       ),
                     ],
@@ -313,7 +312,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       const SizedBox(width: V360Spacing.s1),
                       Text(
                         'Secured by ITP 360',
-                        style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+                        style:
+                            tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -364,7 +364,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 Center(
                   child: Text(
                     'Enter your code',
-                    style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w700),
+                    style: tt.headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
                 const SizedBox(height: V360Spacing.s1),
@@ -401,7 +402,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     if (v.length == 6) con.verifyCode();
                   },
                   onSubmitted: (_) => con.verifyCode(),
-                  decoration: const InputDecoration(hintText: '000000'),
+                  decoration: const InputDecoration(),
                 ),
                 Obx(() {
                   final err = con.errorMessage.value;
@@ -433,9 +434,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _launchWeb(String path) async {
-    final uri = Uri.parse('$_kWebAppUrl$path');
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok) {
+    final uri = Config.webAppUri(path);
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // The platform may have no browser available.
+    }
+    if (mounted) {
       CustomToast.showToast('Could not open browser.', true);
     }
   }
@@ -538,7 +543,7 @@ class _OrDivider extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s3),
           child: Text(
-            'OR',
+            'or',
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
@@ -575,7 +580,7 @@ class _SsoButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(V360Radius.lg),
           onTap: onPressed,
           child: Container(
-            height: 50,
+            height: 48,
             decoration: BoxDecoration(
               color: cs.surface,
               borderRadius: BorderRadius.circular(V360Radius.lg),
@@ -611,12 +616,14 @@ class _FooterLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
+    return TextButton(
+      onPressed: onTap,
       child: Text(
         label,
-        style: const TextStyle(
-          color: _kBrandPurple600,
+        style: TextStyle(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFFD8B4FE)
+              : _kBrandPurple700,
           fontSize: 14,
           fontWeight: FontWeight.w500,
         ),

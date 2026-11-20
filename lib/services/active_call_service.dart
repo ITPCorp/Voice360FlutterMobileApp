@@ -204,7 +204,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
       name = c.remote_display_name ?? '';
       number = c.remote_identity ?? '';
     } catch (_) {}
-    if (name.isEmpty) name = number.isEmpty ? 'Unknown' : number;
+    if (name.isEmpty) name = number.isEmpty ? 'Caller ID unavailable' : number;
     return (name, number);
   }
 

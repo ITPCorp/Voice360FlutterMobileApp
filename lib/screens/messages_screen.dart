@@ -83,11 +83,28 @@ class _MessagesScreenState extends State<MessagesScreen> {
               if (con.isloading.value && con.threads.isEmpty) {
                 return const _ThreadsLoading();
               }
+              if (con.threads.isEmpty && con.loadFailed.value) {
+                return V360EmptyState(
+                  icon: Icons.cloud_off_outlined,
+                  title: 'Could not load conversations',
+                  message: 'Check your connection, then try again.',
+                  onRefresh: () async => con.loadThreads(),
+                  action: TextButton(
+                      onPressed: con.loadThreads,
+                      child: const Text('Try again')),
+                );
+              }
               if (con.threads.isEmpty) {
+                final searching = con.searchController.text.trim().isNotEmpty;
+                if (searching) {
+                  return const V360EmptyState(
+                      icon: Icons.search_off_rounded,
+                      title: 'No matching conversations');
+                }
                 return V360EmptyState(
                   icon: Icons.chat_bubble_outline_rounded,
                   title: 'No conversations',
-                  message: 'Tap the pencil icon to start a new message.',
+                  onRefresh: () async => con.loadThreads(),
                   action: V360Button(
                     label: 'New message',
                     leadingIcon: Icons.edit_square,
@@ -95,17 +112,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   ),
                 );
               }
-              final isSearching =
-                  con.searchController.text.trim().isNotEmpty;
+              final isSearching = con.searchController.text.trim().isNotEmpty;
               // Only show the footer loader/spacer while showing the full
               // list (not filtered search results) and there's actually more
               // data to load.
               final showFooter = !isSearching && con.hasMore;
-              final itemCount =
-                  con.threads.length + (showFooter ? 1 : 0);
+              final itemCount = con.threads.length + (showFooter ? 1 : 0);
               return RefreshIndicator(
                 onRefresh: () async => con.loadThreads(),
                 child: ListView.separated(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   controller: _scroll,
                   padding: const EdgeInsets.only(bottom: V360Spacing.s10),
                   itemCount: itemCount,
@@ -189,19 +205,16 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   Widget _threadRow(MessageThreads t) {
-    final other = t.participants
-        ?.firstWhere((p) => p.isSelf != true,
-            orElse: () => t.participants!.first)
-        .number;
+    final other =
+        t.participants?.where((p) => p.isSelf != true).firstOrNull?.number;
     final displayName = ContactResolver.resolveThreadDisplay(t);
     final members = ContactResolver.membersOfThread(t);
     final isGroup = isGroupThread(members);
     // When the display is a real name we show the phone number as the
     // sub-label of the row's title row; otherwise we just show the last
     // message (existing behaviour). Groups show the head count instead.
-    final showSecondaryPhone = !isGroup &&
-        displayName != (other ?? 'Unknown') &&
-        (other ?? '').isNotEmpty;
+    final showSecondaryPhone =
+        !isGroup && displayName != other && (other ?? '').isNotEmpty;
     final unread = (t.unreadMessages ?? 0) > 0;
     return V360ListTile(
       leading: isGroup

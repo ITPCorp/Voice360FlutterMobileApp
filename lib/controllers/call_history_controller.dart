@@ -10,6 +10,7 @@ int apiLimit = 20;
 
 class CallHistoryController extends GetxController {
   bool isLoading = false;
+  bool loadFailed = false;
   CallHistoryRepo repo = CallHistoryRepo();
   List<CallHistory> callHistoryList = [];
   List<CallHistory> todayCallHistory = [];
@@ -57,44 +58,60 @@ class CallHistoryController extends GetxController {
     }
   }
 
+  bool _fetching = false;
+
+  Future<void> refreshCalls() async {
+    if (_fetching) return;
+    apiOffset = 0;
+    await getCallHistory();
+  }
+
   Future<void> getCallHistory() async {
-    // Show shimmer only when the screen has nothing to render.
-    final hasAny = todayCallHistory.isNotEmpty ||
-        yesterdayCallHistory.isNotEmpty ||
-        callHistoryList.isNotEmpty;
-    isLoading = !hasAny;
-    update();
-
-    final res = await repo.fetchCallHistory(offSet: apiOffset);
-    isLoading = false;
-
-    if (res is String) {
-      CustomToast.showToast(res, true);
+    if (_fetching) return;
+    _fetching = true;
+    try {
+      // Show shimmer only when the screen has nothing to render.
+      final hasAny = todayCallHistory.isNotEmpty ||
+          yesterdayCallHistory.isNotEmpty ||
+          callHistoryList.isNotEmpty;
+      isLoading = !hasAny;
       update();
-      return;
-    }
-    if (res is List<CallHistory>) {
-      apiOffset = apiOffset + apiLimit;
-      if (apiOffset <= apiLimit) {
-        // First page: swap fresh data in.
-        _bucketise(res, replaceAll: true);
-        if (AppCache.instance.isReady) {
-          AppCache.instance.callHistory.writeAll(res);
-        }
-      } else {
-        // Append for pagination.
-        _bucketise(res, replaceAll: false);
-        if (AppCache.instance.isReady) {
-          final combined = [
-            ...todayCallHistory,
-            ...yesterdayCallHistory,
-            ...callHistoryList,
-          ];
-          AppCache.instance.callHistory.writeAll(combined);
+
+      final res = await repo.fetchCallHistory(offSet: apiOffset);
+      loadFailed = res is! List<CallHistory>;
+      isLoading = false;
+
+      if (res is String) {
+        CustomToast.showToast('Could not load recent calls. Try again.', true);
+        update();
+        return;
+      }
+      if (res is List<CallHistory>) {
+        apiOffset = apiOffset + apiLimit;
+        if (apiOffset <= apiLimit) {
+          // First page: swap fresh data in.
+          _bucketise(res, replaceAll: true);
+          if (AppCache.instance.isReady) {
+            AppCache.instance.callHistory.writeAll(res);
+          }
+        } else {
+          // Append for pagination.
+          _bucketise(res, replaceAll: false);
+          if (AppCache.instance.isReady) {
+            final combined = [
+              ...todayCallHistory,
+              ...yesterdayCallHistory,
+              ...callHistoryList,
+            ];
+            AppCache.instance.callHistory.writeAll(combined);
+          }
         }
       }
+    } finally {
+      _fetching = false;
+      isLoading = false;
+      update();
     }
-    update();
   }
 
   dynamic getDataList(String type, bool missedOnly) {

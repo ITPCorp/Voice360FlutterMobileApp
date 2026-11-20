@@ -11,7 +11,7 @@ class V360Theme {
   static ThemeData light() {
     final ColorScheme scheme = const ColorScheme(
       brightness: Brightness.light,
-      primary: V360Colors.primary500,
+      primary: V360Colors.primary700,
       onPrimary: V360Colors.neutral0,
       primaryContainer: V360Colors.primary100,
       onPrimaryContainer: V360Colors.primary900,
@@ -23,7 +23,7 @@ class V360Theme {
       onTertiary: V360Colors.neutral0,
       tertiaryContainer: V360Colors.info50,
       onTertiaryContainer: V360Colors.info700,
-      error: V360Colors.danger500,
+      error: V360Colors.danger600,
       onError: V360Colors.neutral0,
       errorContainer: V360Colors.danger50,
       onErrorContainer: V360Colors.danger700,
@@ -61,8 +61,8 @@ class V360Theme {
       onTertiary: V360Colors.neutral900,
       tertiaryContainer: V360Colors.info700,
       onTertiaryContainer: V360Colors.info50,
-      error: V360Colors.danger500,
-      onError: V360Colors.neutral0,
+      error: Color(0xFFFCA5A5),
+      onError: V360Colors.neutral900,
       errorContainer: V360Colors.danger700,
       onErrorContainer: V360Colors.danger50,
       surface: V360Colors.neutral900,
@@ -182,8 +182,10 @@ class V360Theme {
         centerTitle: false,
         titleTextStyle: text.titleLarge,
         systemOverlayStyle: brightness == Brightness.light
-            ? SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent)
-            : SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
+            ? SystemUiOverlayStyle.dark
+                .copyWith(statusBarColor: Colors.transparent)
+            : SystemUiOverlayStyle.light
+                .copyWith(statusBarColor: Colors.transparent),
       ),
       cardTheme: CardThemeData(
         color: scheme.surface,
@@ -231,7 +233,7 @@ class V360Theme {
       ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          minimumSize: const Size(0, 40),
+          minimumSize: const Size(0, 48),
           padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s3),
           textStyle: text.labelLarge,
           foregroundColor: scheme.primary,
@@ -323,7 +325,8 @@ class V360Theme {
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: scheme.inverseSurface,
-        contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onInverseSurface),
+        contentTextStyle:
+            text.bodyMedium?.copyWith(color: scheme.onInverseSurface),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(V360Radius.lg),

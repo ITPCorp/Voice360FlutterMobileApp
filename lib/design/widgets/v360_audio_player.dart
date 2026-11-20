@@ -248,15 +248,9 @@ class _V360AudioPlayerState extends State<V360AudioPlayer> {
     final cs = Theme.of(context).colorScheme;
     final onOwn = widget.onOwnBubble;
     final accent = onOwn ? cs.onPrimary : cs.primary;
-    final muted = onOwn
-        ? cs.onPrimary.withOpacity(0.7)
-        : cs.onSurfaceVariant;
-    final track = onOwn
-        ? cs.onPrimary.withOpacity(0.25)
-        : cs.outlineVariant;
-    final bg = onOwn
-        ? cs.onPrimary.withOpacity(0.12)
-        : cs.surfaceContainer;
+    final muted = onOwn ? cs.onPrimary.withOpacity(0.7) : cs.onSurfaceVariant;
+    final track = onOwn ? cs.onPrimary.withOpacity(0.25) : cs.outlineVariant;
+    final bg = onOwn ? cs.onPrimary.withOpacity(0.12) : cs.surfaceContainer;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -267,7 +261,7 @@ class _V360AudioPlayerState extends State<V360AudioPlayer> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _playButton(size: 28, color: accent, onBg: onOwn),
+          _playButton(size: 48, color: accent, onBg: onOwn),
           const SizedBox(width: V360Spacing.s2),
           Text(
             _formatSeconds(_position.inMilliseconds / 1000.0),
@@ -414,7 +408,7 @@ class _V360AudioPlayerState extends State<V360AudioPlayer> {
       icon = Icons.play_arrow_rounded;
     }
     return InkResponse(
-      onTap: _toggle,
+      onTap: _loading ? null : _toggle,
       radius: size,
       child: Container(
         width: size,
@@ -426,7 +420,13 @@ class _V360AudioPlayerState extends State<V360AudioPlayer> {
         alignment: Alignment.center,
         child: overlay ??
             Icon(icon,
-                color: onBg ? color : Colors.white, size: inner),
+                semanticLabel: _error
+                    ? 'Retry playback'
+                    : _player.playing
+                        ? 'Pause'
+                        : 'Play',
+                color: onBg ? color : Theme.of(context).colorScheme.onPrimary,
+                size: inner),
       ),
     );
   }
@@ -474,8 +474,8 @@ class _Progress extends StatelessWidget {
           : (details) {
               final box = context.findRenderObject() as RenderBox?;
               if (box == null) return;
-              final dx = (details.localPosition.dx / box.size.width)
-                  .clamp(0.0, 1.0);
+              final dx =
+                  (details.localPosition.dx / box.size.width).clamp(0.0, 1.0);
               onSeek!(dx);
             },
       onHorizontalDragUpdate: onSeek == null
@@ -483,12 +483,12 @@ class _Progress extends StatelessWidget {
           : (details) {
               final box = context.findRenderObject() as RenderBox?;
               if (box == null) return;
-              final dx = (details.localPosition.dx / box.size.width)
-                  .clamp(0.0, 1.0);
+              final dx =
+                  (details.localPosition.dx / box.size.width).clamp(0.0, 1.0);
               onSeek!(dx);
             },
       child: SizedBox(
-        height: h + 8,
+        height: 48,
         child: Align(
           alignment: Alignment.center,
           child: ClipRRect(
@@ -551,6 +551,8 @@ class _SpeedButton extends StatelessWidget {
           ),
       ],
       child: Container(
+        alignment: Alignment.center,
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 6 : 10,
           vertical: compact ? 2 : 4,
@@ -563,7 +565,7 @@ class _SpeedButton extends StatelessWidget {
           '${_label(rate)}×',
           style: TextStyle(
             color: color,
-            fontSize: compact ? 10 : 12,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
         ),

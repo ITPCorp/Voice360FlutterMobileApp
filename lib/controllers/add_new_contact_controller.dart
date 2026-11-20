@@ -13,7 +13,10 @@ class AddNewContactController extends GetxController {
   RxInt phoneNumberCount = 1.obs;
   RxString selectedValues = "Option 1".obs;
   ContactsRepo contactsRepo = ContactsRepo();
-  ContactsController contactsController = Get.find<ContactsController>();
+  final ContactsController contactsController =
+      Get.isRegistered<ContactsController>()
+          ? Get.find<ContactsController>()
+          : Get.put(ContactsController());
 
   List<String> options = [
     "Option 1",
@@ -49,7 +52,6 @@ class AddNewContactController extends GetxController {
     contactFieldsData.add({
       "labelOptions": contactsLabels,
       "selectedLabel": 0,
-      "code": "92",
       "controller": TextEditingController()
     });
     update();
@@ -91,8 +93,10 @@ class AddNewContactController extends GetxController {
       for (var i = 0; i < contactFieldsData.length; i++) {
         Number number = Number(
           label: contactsLabels[contactFieldsData[i]['selectedLabel']],
-          number: "+${contactFieldsData[i]['code']}" +
-              contactFieldsData[i]['controller'].text,
+          number: contactFieldsData[i]['controller']
+              .text
+              .toString()
+              .replaceAll(RegExp(r'[\s().-]'), ''),
         );
         numbers.add(number);
       }
@@ -141,8 +145,6 @@ class AddNewContactController extends GetxController {
   }
 
   validateForms() async {
-    RegExp phoneRegexp = RegExp(r'(^(?:[+0]9)?[0-9]{10,12}$)');
-
     if (fullNameController.text.isEmpty || fullNameController.text == null) {
       CustomToast.showToast("Please enter contact name", true);
 
@@ -158,8 +160,10 @@ class AddNewContactController extends GetxController {
           return false;
         }
         var isPhoneValid = await contactsRepo.validatePhoneNumber(
-            "+${contactFieldsData[i]['code']}" +
-                contactFieldsData[i]['controller'].text.toString());
+            contactFieldsData[i]['controller']
+                .text
+                .toString()
+                .replaceAll(RegExp(r'[\s().-]'), ''));
 
         if (isPhoneValid.runtimeType == String) {
           Get.back();
@@ -184,8 +188,7 @@ class AddNewContactController extends GetxController {
     for (int i = 0; i < emailFieldsData.length; i++) {
       if (emailFieldsData[i]['controller'].text.toString().isEmpty ||
           emailFieldsData[i]['controller'].text == null) {
-        CustomToast.showToast("Please enter an email", true);
-        return false;
+        continue;
       }
 
       bool isEmailValid =

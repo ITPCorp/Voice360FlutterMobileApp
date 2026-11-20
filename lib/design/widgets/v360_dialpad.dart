@@ -135,53 +135,67 @@ class _DialKeyState extends State<_DialKey> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final size = widget.compact ? 56.0 : 68.0;
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: _down,
-      onPointerUp: (e) => _up(e.pointer),
-      onPointerCancel: (e) => _up(e.pointer),
-      child: AnimatedScale(
-        scale: _pressed ? 0.9 : 1.0,
-        duration: const Duration(milliseconds: 60),
-        curve: Curves.easeOut,
-        child: Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            color: _pressed ? cs.primary.withOpacity(0.18) : cs.surfaceContainer,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  widget.digit,
-                  style: TextStyle(
-                    fontSize: widget.compact ? 24 : 28,
-                    fontWeight: FontWeight.w500,
-                    color: cs.onSurface,
-                    height: 1,
-                  ),
-                ),
-                if (widget.letters.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      widget.letters,
+    return Semantics(
+        button: true,
+        label: [widget.digit, if (widget.letters.isNotEmpty) widget.letters]
+            .join(', '),
+        onTap: widget.onDown,
+        onLongPress: widget.onHold == null
+          ? null
+          : () {
+              widget.onDown();
+              widget.onHold!();
+            },
+        excludeSemantics: true,
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: _down,
+          onPointerUp: (e) => _up(e.pointer),
+          onPointerCancel: (e) => _up(e.pointer),
+          child: AnimatedScale(
+            scale: _pressed ? 0.9 : 1.0,
+            duration: const Duration(milliseconds: 60),
+            curve: Curves.easeOut,
+            child: Container(
+              width: size,
+              height: size,
+              decoration: BoxDecoration(
+                color: _pressed
+                    ? cs.primary.withOpacity(0.18)
+                    : cs.surfaceContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      widget.digit,
                       style: TextStyle(
-                        fontSize: widget.compact ? 8 : 10,
-                        fontWeight: FontWeight.w600,
-                        color: cs.onSurfaceVariant,
-                        letterSpacing: 1.6,
+                        fontSize: widget.compact ? 24 : 28,
+                        fontWeight: FontWeight.w500,
+                        color: cs.onSurface,
+                        height: 1,
                       ),
                     ),
-                  ),
-              ],
+                    if (widget.letters.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          widget.letters,
+                          style: TextStyle(
+                            fontSize: widget.compact ? 8 : 10,
+                            fontWeight: FontWeight.w600,
+                            color: cs.onSurfaceVariant,
+                            letterSpacing: 1.6,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
-    );
+        ));
   }
 }

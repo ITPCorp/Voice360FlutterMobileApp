@@ -51,15 +51,6 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('New contact'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            child: const Text(
-              'Save',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
       ),
       body: GetBuilder<AddNewContactController>(
         builder: (_) {
@@ -77,10 +68,9 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
               children: [
                 Center(
                   child: V360Avatar(
-                    name:
-                        '${_firstName.text} ${_lastName.text}'.trim().isEmpty
-                            ? '?'
-                            : '${_firstName.text} ${_lastName.text}',
+                    name: '${_firstName.text} ${_lastName.text}'.trim().isEmpty
+                        ? '?'
+                        : '${_firstName.text} ${_lastName.text}',
                     size: 96,
                   ),
                 ),
@@ -91,7 +81,6 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
                   controller: _firstName,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(hintText: 'First name'),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: V360Spacing.s4),
@@ -101,7 +90,6 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
                   controller: _lastName,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(hintText: 'Last name'),
                   onChanged: (_) => setState(() {}),
                 ),
                 const SizedBox(height: V360Spacing.s5),
@@ -122,12 +110,15 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
                           ),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'Mobile', child: Text('Mobile')),
+                          DropdownMenuItem(
+                              value: 'Mobile', child: Text('Mobile')),
                           DropdownMenuItem(value: 'Work', child: Text('Work')),
                           DropdownMenuItem(value: 'Home', child: Text('Home')),
-                          DropdownMenuItem(value: 'Others', child: Text('Other')),
+                          DropdownMenuItem(
+                              value: 'Others', child: Text('Other')),
                         ],
-                        onChanged: (v) => setState(() => _label = v ?? 'Mobile'),
+                        onChanged: (v) =>
+                            setState(() => _label = v ?? 'Mobile'),
                       ),
                     ),
                     const SizedBox(width: V360Spacing.s2),
@@ -136,7 +127,7 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
                         controller: phoneCtrl,
                         keyboardType: TextInputType.phone,
                         decoration: const InputDecoration(
-                          hintText: '(555) 123-4567',
+                          hintText: '+1 202 555 0148',
                           prefixIcon: Icon(Icons.phone_outlined, size: 20),
                         ),
                       ),
@@ -144,7 +135,7 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
                   ],
                 ),
                 const SizedBox(height: V360Spacing.s5),
-                _label_('Email'),
+                _label_('Email (optional)'),
                 const SizedBox(height: V360Spacing.s2),
                 TextField(
                   controller: emailCtrl,

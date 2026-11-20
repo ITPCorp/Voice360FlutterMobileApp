@@ -28,7 +28,7 @@ class V360Button extends StatelessWidget {
   });
 
   double get _height => switch (size) {
-        V360ButtonSize.sm => 36,
+        V360ButtonSize.sm => 48,
         V360ButtonSize.md => 48,
         V360ButtonSize.lg => 56,
       };
@@ -40,9 +40,12 @@ class V360Button extends StatelessWidget {
       };
 
   EdgeInsets get _padding => switch (size) {
-        V360ButtonSize.sm => const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
-        V360ButtonSize.md => const EdgeInsets.symmetric(horizontal: V360Spacing.s5),
-        V360ButtonSize.lg => const EdgeInsets.symmetric(horizontal: V360Spacing.s6),
+        V360ButtonSize.sm =>
+          const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
+        V360ButtonSize.md =>
+          const EdgeInsets.symmetric(horizontal: V360Spacing.s5),
+        V360ButtonSize.lg =>
+          const EdgeInsets.symmetric(horizontal: V360Spacing.s6),
       };
 
   @override

@@ -4,8 +4,12 @@ class Config {
   /// Build-time backend switch. `--dart-define=V360_ENV=dev` points the whole
   /// app at the dev stack (dev CRM + dev voice API + dev Kamailio, account 61)
   /// so test builds never touch production. Anything else = production.
-  static const String ENV = String.fromEnvironment('V360_ENV', defaultValue: 'prod');
+  static const String ENV =
+      String.fromEnvironment('V360_ENV', defaultValue: 'prod');
   static bool get isDev => ENV == 'dev';
+
+  static Uri webAppUri(String path) =>
+      Uri.https(isDev ? 'app.dev.voice360.app' : 'app.voice360.app', path);
 
   static String BASE_URL_CRM = isDev
       ? "https://api.itpscorp.com/dev/portal/crm"

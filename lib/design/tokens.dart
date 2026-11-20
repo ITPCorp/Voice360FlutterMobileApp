@@ -64,8 +64,8 @@ class V360Colors {
   static const Color info700 = Color(0xFF1D4ED8);
 
   // Call states
-  static const Color callAccept = success500;
-  static const Color callDecline = danger500;
+  static const Color callAccept = success700;
+  static const Color callDecline = danger600;
   static const Color callMissed = danger600;
 }
 

@@ -309,7 +309,9 @@ class LoginController extends GetxController {
     final s = raw.trim();
     final lc = s.toLowerCase();
     if (lc.contains('invalid') &&
-        (lc.contains('credential') || lc.contains('password') || lc.contains('login'))) {
+        (lc.contains('credential') ||
+            lc.contains('password') ||
+            lc.contains('login'))) {
       return 'Invalid email or password. Please try again.';
     }
     if (lc.contains('not found') || lc.contains('no user')) {
@@ -321,8 +323,7 @@ class LoginController extends GetxController {
     if (lc.contains('timeout') || lc.contains('network')) {
       return 'Network error. Please try again.';
     }
-    // Looks like a server-side sentence — show as-is.
-    if (s.length < 160 && s.contains(' ')) return s;
+
     return 'Something went wrong. Please try again.';
   }
 

@@ -7,6 +7,7 @@ class V360EmptyState extends StatelessWidget {
   final String title;
   final String? message;
   final Widget? action;
+  final RefreshCallback? onRefresh;
 
   const V360EmptyState({
     super.key,
@@ -14,13 +15,14 @@ class V360EmptyState extends StatelessWidget {
     required this.title,
     this.message,
     this.action,
+    this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    return Center(
+    final content = Center(
       child: Padding(
         padding: const EdgeInsets.all(V360Spacing.s8),
         child: Column(
@@ -56,6 +58,18 @@ class V360EmptyState extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+    final refresh = onRefresh;
+    if (refresh == null) {
+      return Center(
+          child: SingleChildScrollView(primary: false, child: content));
+    }
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [SliverFillRemaining(hasScrollBody: false, child: content)],
       ),
     );
   }

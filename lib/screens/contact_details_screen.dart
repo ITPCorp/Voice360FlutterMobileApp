@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -55,9 +56,9 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
         ),
       );
     }
-    final fullName =
-        ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
-    final displayName = fullName.isEmpty ? '(No name)' : fullName;
+    final fullName = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
+    final displayName =
+        fullName.isEmpty ? (c.phone ?? c.email ?? 'Contact') : fullName;
 
     return Scaffold(
       body: CustomScrollView(
@@ -135,7 +136,7 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
                   _quickAction(
                     icon: Icons.chat_bubble_rounded,
                     label: 'Message',
-                    color: V360Colors.primary500,
+                    color: cs.primary,
                     onTap: c.phone == null || c.phone!.isEmpty
                         ? null
                         : () => Get.toNamed(
@@ -149,8 +150,22 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
                     color: V360Colors.info500,
                     onTap: c.email == null || c.email!.isEmpty
                         ? null
-                        : () {
-                            // mail launcher hook — left to existing util
+                        : () async {
+                            try {
+                              if (await launchUrl(
+                                  Uri(scheme: 'mailto', path: c.email))) {
+                                return;
+                              }
+                            } catch (_) {
+                              // No mail app is available.
+                            }
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content:
+                                        Text('No email app is available.')),
+                              );
+                            }
                           },
                   ),
                 ],
@@ -182,7 +197,8 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
                       value: c.notes!,
                       multiline: true,
                     ),
-                  if ((c.address != null && c.address.toString().trim().isNotEmpty) ||
+                  if ((c.address != null &&
+                          c.address.toString().trim().isNotEmpty) ||
                       (c.city != null && c.city.toString().trim().isNotEmpty))
                     _infoCard(
                       icon: Icons.location_on_outlined,
@@ -356,8 +372,7 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Delete contact?'),
-        content:
-            const Text('This will remove the contact from your account.'),
+        content: const Text('This will remove the contact from your account.'),
         actions: [
           TextButton(
             onPressed: () => Get.back(),

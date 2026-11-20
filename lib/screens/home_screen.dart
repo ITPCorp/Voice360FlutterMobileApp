@@ -126,101 +126,118 @@ class _HomeScreenState extends State<HomeScreen>
     final tt = Theme.of(context).textTheme;
     return SafeArea(
       bottom: false,
-      child: Column(
-        children: [
-          const SizedBox(height: V360Spacing.s5),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ValueListenableBuilder(
-                    valueListenable: _number,
-                    builder: (_, value, __) {
-                      final empty = value.text.isEmpty;
-                      return TextField(
-                        controller: _number,
-                        readOnly: false,
-                        showCursor: true,
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.none,
-                        style: tt.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 1.5,
-                          color: empty ? cs.onSurfaceVariant : cs.onSurface,
+      child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                      child: Column(
+                    children: [
+                      const SizedBox(height: V360Spacing.s5),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: V360Spacing.s6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: ValueListenableBuilder(
+                                valueListenable: _number,
+                                builder: (_, value, __) {
+                                  final empty = value.text.isEmpty;
+                                  return TextField(
+                                    controller: _number,
+                                    readOnly: false,
+                                    showCursor: true,
+                                    textAlign: TextAlign.center,
+                                    keyboardType: TextInputType.none,
+                                    style: tt.headlineLarge?.copyWith(
+                                      fontWeight: FontWeight.w400,
+                                      letterSpacing: 1.5,
+                                      color: empty
+                                          ? cs.onSurfaceVariant
+                                          : cs.onSurface,
+                                    ),
+                                    decoration: InputDecoration(
+                                      filled: false,
+                                      border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      hintText: 'Enter number',
+                                      hintStyle: tt.headlineLarge?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w300,
+                                      ),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                        decoration: InputDecoration(
-                          filled: false,
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          hintText: 'Enter number',
-                          hintStyle: tt.headlineLarge?.copyWith(
-                            color: cs.onSurfaceVariant.withOpacity(0.5),
-                            fontWeight: FontWeight.w300,
-                          ),
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: V360Spacing.s2),
-          const Spacer(),
-          V360Dialpad(
-            onKey: _press, // the dialpad already does the haptic
-            onPlus: _zeroToPlus,
-          ),
-          const SizedBox(height: V360Spacing.s5),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s6),
-            child: Row(
-              children: [
-                _smallAction(
-                  context,
-                  icon: Icons.person_add_alt_1_rounded,
-                  onTap: _number.text.isEmpty
-                      ? null
-                      : () => Get.toNamed(
-                            Routes.ADD_NEW_CONTACT_ROUTE,
-                            arguments: _number.text,
-                          ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: V360Spacing.s4,
-                    ),
-                    child: ValueListenableBuilder(
-                      valueListenable: _number,
-                      builder: (_, value, __) => _CallButton(
-                        enabled: value.text.trim().isNotEmpty,
-                        onTap: _call,
                       ),
-                    ),
-                  ),
+                      const SizedBox(height: V360Spacing.s2),
+                      const Spacer(),
+                      V360Dialpad(
+                        compact: constraints.maxHeight < 520,
+                        onKey: _press, // the dialpad already does the haptic
+                        onPlus: _zeroToPlus,
+                      ),
+                      const SizedBox(height: V360Spacing.s5),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: V360Spacing.s6),
+                        child: Row(
+                          children: [
+                            ValueListenableBuilder(
+                                valueListenable: _number,
+                                builder: (_, value, __) => _smallAction(
+                                      context,
+                                      icon: Icons.person_add_alt_1_rounded,
+                                      label: 'Add contact',
+                                      onTap: value.text.trim().isEmpty
+                                          ? null
+                                          : () => Get.toNamed(
+                                                Routes.ADD_NEW_CONTACT_ROUTE,
+                                                arguments: _number.text,
+                                              ),
+                                    )),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: V360Spacing.s4,
+                                ),
+                                child: ValueListenableBuilder(
+                                  valueListenable: _number,
+                                  builder: (_, value, __) => _CallButton(
+                                    enabled: value.text.trim().isNotEmpty,
+                                    onTap: _call,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _smallAction(
+                              context,
+                              icon: Icons.backspace_outlined,
+                              label: 'Delete digit. Hold to clear',
+                              onTap: _backspace,
+                              onLongPress: _clear,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: V360Spacing.s6),
+                    ],
+                  )),
                 ),
-                _smallAction(
-                  context,
-                  icon: Icons.backspace_outlined,
-                  onTap: _backspace,
-                  onLongPress: _clear,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: V360Spacing.s6),
-        ],
-      ),
+              )),
     );
   }
 
   Widget _smallAction(
     BuildContext context, {
     required IconData icon,
+    required String label,
     VoidCallback? onTap,
     VoidCallback? onLongPress,
   }) {
@@ -239,7 +256,10 @@ class _HomeScreenState extends State<HomeScreen>
           child: Center(
             child: Icon(
               icon,
-              color: disabled ? cs.onSurfaceVariant.withOpacity(0.5) : cs.onSurface,
+              semanticLabel: label,
+              color: disabled
+                  ? cs.onSurfaceVariant.withOpacity(0.5)
+                  : cs.onSurface,
               size: 22,
             ),
           ),
@@ -282,15 +302,12 @@ class _CallButtonState extends State<_CallButton> {
             customBorder: const CircleBorder(),
             splashColor: Colors.white.withOpacity(0.2),
             highlightColor: Colors.transparent,
-            onTapDown: widget.enabled
-                ? (_) => setState(() => _pressed = true)
-                : null,
-            onTapCancel: widget.enabled
-                ? () => setState(() => _pressed = false)
-                : null,
-            onTapUp: widget.enabled
-                ? (_) => setState(() => _pressed = false)
-                : null,
+            onTapDown:
+                widget.enabled ? (_) => setState(() => _pressed = true) : null,
+            onTapCancel:
+                widget.enabled ? () => setState(() => _pressed = false) : null,
+            onTapUp:
+                widget.enabled ? (_) => setState(() => _pressed = false) : null,
             onTap: widget.enabled
                 ? () {
                     HapticFeedback.mediumImpact();
@@ -298,7 +315,8 @@ class _CallButtonState extends State<_CallButton> {
                   }
                 : null,
             child: const Center(
-              child: Icon(Icons.call_rounded, color: Colors.white, size: 32),
+              child: Icon(Icons.call_rounded,
+                  semanticLabel: 'Call', color: Colors.white, size: 32),
             ),
           ),
         ),

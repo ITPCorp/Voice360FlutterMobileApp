@@ -24,6 +24,7 @@ import 'package:itp_voice/widgets/custom_toast.dart';
 /// id are accepted.
 class ContactsController extends GetxController {
   bool isContactsLoading = false;
+  bool loadFailed = false;
   ContactsRepo repo = ContactsRepo();
 
   // -- Full list (paginated)
@@ -38,6 +39,7 @@ class ContactsController extends GetxController {
   List<Contact> _searchResults = const [];
   int _searchRequestId = 0;
   bool isSearching = false;
+  bool searchFailed = false;
 
   RxInt conOffSet = 0.obs,
       totalPages = 0.obs,
@@ -75,6 +77,7 @@ class ContactsController extends GetxController {
     }
 
     final res = await repo.getContacts(offSet);
+    loadFailed = res is! ContactResponse;
     isContactsLoading = false;
 
     if (res is ContactResponse) {
@@ -109,6 +112,7 @@ class ContactsController extends GetxController {
     final myId = ++_searchRequestId;
     _activeSearchQuery = query;
     isSearching = true;
+    searchFailed = false;
     update();
 
     final res = await repo.searchContacts('0', query);
@@ -120,6 +124,7 @@ class ContactsController extends GetxController {
     if (_activeSearchQuery.isEmpty) return;
 
     isSearching = false;
+    searchFailed = res is! ContactResponse;
     if (res is ContactResponse && res.result != null) {
       final filtered = res.result!
           .where((c) => (c.firstname != null && c.firstname!.isNotEmpty))
