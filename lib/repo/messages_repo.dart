@@ -136,7 +136,7 @@ class MessagesRepo {
       );
       if (resp is! Map || resp["result"] is! Map) return null;
       return Messages.fromJson(
-          (resp["result"] as Map).cast<String, dynamic>());
+          (resp["result"] as Map).cast<String, dynamic>(), rawUtc: true);
     } catch (e) {
       if (e is DioException) {
         print(e.response);

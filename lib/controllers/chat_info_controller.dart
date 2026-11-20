@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/helpers/contact_phone.dart';
 
 import '../cache/cache_service.dart';
@@ -161,11 +162,9 @@ class ChatInfoController extends GetxController {
   /// the link hasn't fully populated yet.
   String displayName() {
     if (linkedContact != null) {
-      final name =
-          ('${linkedContact!.firstname ?? ''} ${linkedContact!.lastname ?? ''}')
-              .trim();
-      if (name.isNotEmpty) return name;
+      final name = conversationName(linkedContact!.firstname, linkedContact!.lastname);
+      if (name != null) return name;
     }
-    return ContactResolver.resolveByPhone(phone, fallback: phone);
+    return ContactResolver.resolveNameOrNull(phone) ?? conversationNumber(phone);
   }
 }

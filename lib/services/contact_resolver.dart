@@ -31,7 +31,7 @@ class ContactResolver {
     if (embedded != null && embedded.isNotEmpty) return embedded;
     final local = _matchLocalByPhone(peer.number);
     if (local != null) return local;
-    return peer.number ?? 'Conversation';
+    return peer.number == null ? 'Conversation' : conversationNumber(peer.number);
   }
 
   /// Same logic, but for an arbitrary phone string — used by the chat header
@@ -152,7 +152,6 @@ class ContactResolver {
   }
 
   static String? _formatName(Contact c) {
-    final full = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
-    return full.isEmpty ? null : full;
+    return conversationName(c.firstname, c.lastname);
   }
 }

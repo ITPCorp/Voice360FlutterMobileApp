@@ -376,7 +376,7 @@ class SmsEventReader {
 
   String? get timestampUtc =>
       (event.data['message_timestamp_utc'] ??
-              _parsedPayload?['message_timestamp'] ??
+              _parsedPayload?['message_timestamp_utc'] ??
               event.data['thread']?['last_updated'])
           ?.toString();
 
@@ -390,7 +390,8 @@ class SmsEventReader {
       'message': body ?? '',
       'message_provider_id': providerId,
       'media_id': null,
-      'message_timestamp': timestampUtc,
+      'message_timestamp_utc': timestampUtc,
+      'message_timestamp': _parsedPayload?['message_timestamp'],
       'from_number': fromNumber,
     };
   }

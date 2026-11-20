@@ -1,3 +1,5 @@
+import 'package:itp_voice/helpers/group_chat.dart' show conversationName;
+
 class GetThreadMessagesResponseModel {
   Result? result;
   bool? errors;
@@ -147,7 +149,20 @@ class Messages {
   bool get hasTranscript =>
       (callTranscription != null && callTranscription!.trim().isNotEmpty);
 
-  Messages.fromJson(Map<String, dynamic> json) {
+  // GET has a UTC companion and a legacy account-local display value.
+  // POST returns the database timestamp directly, without a UTC suffix.
+  static String? _timestamp(Map<String, dynamic> row, {bool rawUtc = false}) {
+    final utc = row['message_timestamp_utc'];
+    final raw = (utc ?? row['message_timestamp'])?.toString().trim();
+    if (raw == null || raw.isEmpty) return null;
+    var parsed = DateTime.tryParse(raw);
+    if (parsed != null && !parsed.isUtc && (utc != null || rawUtc)) {
+      parsed = DateTime.tryParse('${raw}Z');
+    }
+    return parsed?.toUtc().toIso8601String();
+  }
+
+  Messages.fromJson(Map<String, dynamic> json, {bool rawUtc = false}) {
     messageStatus = json['message_status'];
     // POST /chat/sms send response uses `id`; GET thread response uses `pk`.
     // Tolerate both so the locally-inserted bubble can be matched against
@@ -159,7 +174,7 @@ class Messages {
     callBackResponse = json['call_back_response'] != null
         ? new CallBackResponse.fromJson(json['call_back_response'])
         : null;
-    messageTimestamp = json['message_timestamp'];
+    messageTimestamp = _timestamp(json, rawUtc: rawUtc);
     messageParticipantId = json['message_participant_id'];
     final rawParticipant = json['message_participant'];
     messageParticipant = rawParticipant is String ? rawParticipant : null;
@@ -231,7 +246,7 @@ class Messages {
     messageBody = json['message'];
     messageProviderId = json['message_provider_id'];
     messageMmsMedia = json['media_id'];
-    messageTimestamp = json['message_timestamp'];
+    messageTimestamp = _timestamp(json);
     messageParticipant = json['from_number'];
     isDelivered = true;
     aiCall = false;
@@ -302,8 +317,7 @@ class Participants {
   String? get contactName {
     final c = contact;
     if (c == null) return null;
-    final full = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
-    return full.isEmpty ? null : full;
+    return conversationName(c.firstname, c.lastname);
   }
 
   Participants.fromJson(Map<String, dynamic> json) {

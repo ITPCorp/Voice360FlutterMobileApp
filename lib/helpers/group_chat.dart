@@ -100,6 +100,18 @@ String formatPhoneNumber(String? number) {
       '${national.substring(6)}';
 }
 
+/// National display for 1:1 conversations. Keep international dialing prefixes.
+String conversationNumber(String? number) {
+  final formatted = formatPhoneNumber(number);
+  return formatted.startsWith('+1 (') ? formatted.substring(3) : formatted;
+}
+
+String? conversationName(String? first, String? last) {
+  if (isPlaceholderName(first, last)) return null;
+  final full = '${first ?? ''} ${last ?? ''}'.trim();
+  return full.isEmpty ? null : full;
+}
+
 /// Everyone who isn't us, de-duplicated by number, in thread order.
 List<ChatMember> otherMembers(Iterable<ChatMember> members) {
   final seen = <String>{};

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/controllers/chat_info_controller.dart';
 import 'package:itp_voice/design/v360.dart';
 import 'package:itp_voice/routes.dart';
@@ -49,7 +50,8 @@ class _Header extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
     final name = con.displayName();
-    final showPhoneSubtitle = name != con.phone;
+    final phone = conversationNumber(con.phone);
+    final showPhoneSubtitle = phone.isNotEmpty && name != phone;
     return Column(
       children: [
         V360Avatar(name: name, size: 96),
@@ -62,7 +64,7 @@ class _Header extends StatelessWidget {
         if (showPhoneSubtitle) ...[
           const SizedBox(height: 2),
           Text(
-            con.phone,
+            phone,
             style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),

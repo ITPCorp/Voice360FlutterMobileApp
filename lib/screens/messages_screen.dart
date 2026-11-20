@@ -217,7 +217,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     // sub-label of the row's title row; otherwise we just show the last
     // message (existing behaviour). Groups show the head count instead.
     final showSecondaryPhone =
-        !isGroup && displayName != other && (other ?? '').isNotEmpty;
+        !isGroup && displayName != conversationNumber(other) && (other ?? '').isNotEmpty;
     final unread = (t.unreadMessages ?? 0) > 0;
     return V360ListTile(
       leading: isGroup
@@ -227,7 +227,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       subtitle: isGroup
           ? '${groupPeopleLabel(members)} · ${t.lastMessage ?? ''}'
           : showSecondaryPhone
-              ? '${other!} · ${t.lastMessage ?? ''}'
+              ? '${conversationNumber(other)} · ${t.lastMessage ?? ''}'
               : (t.lastMessage ?? ''),
       titleStyle: TextStyle(
         fontWeight: unread ? FontWeight.w700 : FontWeight.w600,

@@ -1,3 +1,5 @@
+import 'package:itp_voice/helpers/group_chat.dart' show conversationName;
+
 class GetMessageThreadsResponseModel {
   Result? result;
   bool? errors;
@@ -136,8 +138,7 @@ class Participants {
   String? get contactName {
     final c = contact;
     if (c == null) return null;
-    final full = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
-    return full.isEmpty ? null : full;
+    return conversationName(c.firstname, c.lastname);
   }
 
   Participants.fromJson(Map<String, dynamic> json) {

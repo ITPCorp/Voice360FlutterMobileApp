@@ -67,8 +67,8 @@ class _ChatScreenState extends State<ChatScreen> {
     // 1. If this chat was opened from a contact tap, use that contact's name.
     final c = con.contact;
     if (c != null) {
-      final name = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
-      if (name.isNotEmpty) return name;
+      final name = conversationName(c.firstname, c.lastname);
+      if (name != null) return name;
     }
     // 2. Otherwise prefer the participant.contact the server embedded.
     final ps = con.messages?.result?.participants ?? const [];
@@ -80,7 +80,7 @@ class _ChatScreenState extends State<ChatScreen> {
     // 3. Fall back to a local cache lookup by phone number.
     final peer = _peerNumber();
     final fromCache = ContactResolver.resolveNameOrNull(peer);
-    return fromCache ?? (peer.isEmpty ? 'Conversation' : peer);
+    return fromCache ?? (peer.isEmpty ? 'Conversation' : conversationNumber(peer));
   }
 
   @override
@@ -97,14 +97,10 @@ class _ChatScreenState extends State<ChatScreen> {
           final isGroup = isGroupThread(members);
           final display = isGroup ? groupDisplayName(members) : _peerDisplay();
           final number = _peerNumber();
-          final showNumber = number.isNotEmpty && display != number;
+          final formatted = conversationNumber(number);
           final subtitle = isGroup
               ? '${groupPeopleLabel(members)}: ${groupFullNames(members)}'
-              : (showNumber
-                  ? number
-                  : (con.myNumber.isNotEmpty
-                      ? 'SMS · From ${con.myNumber}'
-                      : 'SMS'));
+              : (formatted.isNotEmpty && display != formatted ? formatted : null);
           return Row(
             children: [
               isGroup
@@ -123,7 +119,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                       overflow: TextOverflow.ellipsis,
                     ),
-                    Text(
+                    if (subtitle != null) Text(
                       subtitle,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: cs.onSurfaceVariant,
@@ -226,7 +222,7 @@ class _ChatScreenState extends State<ChatScreen> {
               final peer = _peerDisplay();
               return Padding(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: V360Spacing.s4),
+                      const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: V360LiveList(
                     ids: [
                       for (final m in messages)
@@ -234,7 +230,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     ],
                     controller: _scroll,
                     reverse: true,
-                    padding: const EdgeInsets.only(bottom: V360Spacing.s4),
+                    padding: EdgeInsets.zero,
                     itemBuilder: (_, i) {
                       final m = messages[i];
                       final next =
@@ -433,11 +429,14 @@ class _MessageBubble extends StatelessWidget {
               ),
             ),
           ),
-          if (isMe && message.isDelivered == true)
+          if (!showTimestamp || (isMe && message.isDelivered == true))
             Padding(
               padding: const EdgeInsets.only(top: 2, right: 4),
               child: Text(
-                'Delivered',
+                [
+                  if (!showTimestamp) _formatTimestamp(message.messageTimestamp),
+                  if (isMe && message.isDelivered == true) 'Delivered',
+                ].where((part) => part.isNotEmpty).join(' · '),
                 style: tt.labelSmall?.copyWith(
                   color: cs.onSurfaceVariant,
                   fontSize: 10,
