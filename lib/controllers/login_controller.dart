@@ -96,7 +96,8 @@ class LoginController extends GetxController {
     if (challenge == null || isLoading.value) return;
     final code = codeController.text.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(code)) {
-      errorMessage.value = 'Enter the 6-digit code from your authenticator app.';
+      errorMessage.value =
+          'Enter the 6-digit code from your authenticator app.';
       return;
     }
     errorMessage.value = '';
@@ -113,9 +114,10 @@ class LoginController extends GetxController {
       codeController.clear();
       if (failure.restart) {
         mfaChallenge.value = null;
-        errorMessage.value = 'Your sign-in timed out. Enter your password again.';
+        errorMessage.value =
+            'Your sign-in timed out. Enter your password again.';
       } else {
-        errorMessage.value = failure.message;
+        errorMessage.value = _humanizeServerError(failure.message);
       }
       CustomToast.showToast(errorMessage.value, true);
     } catch (e) {
@@ -171,8 +173,8 @@ class LoginController extends GetxController {
       final callbackUri = Uri.parse(callback);
       final error = callbackUri.queryParameters['error'];
       if (error != null) {
-        final desc = callbackUri.queryParameters['error_description'];
-        final msg = desc ?? 'Sign-in with ${_providerLabel(provider)} failed.';
+        final msg =
+            'Sign-in with ${_providerLabel(provider)} did not finish. Try again.';
         errorMessage.value = msg;
         CustomToast.showToast(msg, true);
         return;
@@ -302,12 +304,19 @@ class LoginController extends GetxController {
     } catch (_) {}
   }
 
-  // Server errors are usually short ("invalid_credentials") or noisy
-  // ("[object Object]" / raw JSON). Map the common ones; otherwise pass through
-  // if it looks like a sentence.
+  // Only known sign-in conditions become user-facing messages.
   String _humanizeServerError(String raw) {
     final s = raw.trim();
     final lc = s.toLowerCase();
+    if (lc.contains('too many') || lc.contains('rate limit')) {
+      return 'Too many attempts. Try again later.';
+    }
+    if (lc.contains('code') &&
+        (lc.contains('invalid') ||
+            lc.contains('incorrect') ||
+            lc.contains('expired'))) {
+      return 'That code did not work. Enter the current code from your authenticator.';
+    }
     if (lc.contains('invalid') &&
         (lc.contains('credential') ||
             lc.contains('password') ||
@@ -320,7 +329,9 @@ class LoginController extends GetxController {
     if (lc.contains('locked') || lc.contains('disabled')) {
       return 'This account is locked. Contact your administrator.';
     }
-    if (lc.contains('timeout') || lc.contains('network')) {
+    if (lc.contains('timeout') ||
+        lc.contains('network') ||
+        lc.contains('reach the server')) {
       return 'Network error. Please try again.';
     }
 
@@ -369,7 +380,8 @@ class LoginController extends GetxController {
           return;
         }
       }
-      if (status == RefreshStatus.expired || status == RefreshStatus.noSession) {
+      if (status == RefreshStatus.expired ||
+          status == RefreshStatus.noSession) {
         await AuthRepo.clearLocalSession();
         _showLoginForm(_prefs,
             message: status == RefreshStatus.expired
