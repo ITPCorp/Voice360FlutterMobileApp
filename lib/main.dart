@@ -156,6 +156,7 @@ class Voice360App extends StatelessWidget {
       builder: (context, _) => GetMaterialApp(
         title: 'VOICE360',
         initialBinding: Binding(),
+        defaultTransition: Transition.native,
         theme: V360Theme.light(),
         darkTheme: V360Theme.dark(),
         themeMode: ThemeMode.system,

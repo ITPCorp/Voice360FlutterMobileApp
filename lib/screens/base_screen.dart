@@ -8,8 +8,14 @@ import 'package:itp_voice/screens/messages_screen.dart';
 import 'package:itp_voice/screens/profile_screen.dart';
 import 'package:itp_voice/screens/voice_mail_screen.dart';
 
-class BaseScreen extends StatelessWidget {
-  BaseScreen({super.key});
+class BaseScreen extends StatefulWidget {
+  const BaseScreen({super.key});
+  @override
+  State<BaseScreen> createState() => _BaseScreenState();
+}
+
+class _BaseScreenState extends State<BaseScreen> {
+  final _pages = <int, Widget>{};
   final BaseScreenController con = Get.put(BaseScreenController());
 
   static const List<_Tab> _tabs = [
@@ -36,7 +42,16 @@ class BaseScreen extends StatelessWidget {
     return Scaffold(
       body: SafeArea(
         bottom: false,
-        child: Obx(() => _bodyForTab(con.currentTab.value)),
+        child: Obx(() {
+          final selected = con.currentTab.value;
+          _pages.putIfAbsent(selected, () => _bodyForTab(selected));
+          return IndexedStack(index: selected, children: [
+            for (var i = 0; i < _tabs.length; i++)
+              TickerMode(
+                  enabled: i == selected,
+                  child: _pages[i] ?? const SizedBox.shrink()),
+          ]);
+        }),
       ),
       bottomNavigationBar: Obx(() {
         return Container(
@@ -53,8 +68,7 @@ class BaseScreen extends StatelessWidget {
               onDestinationSelected: con.updateCurrentTab,
               backgroundColor: cs.surface,
               indicatorColor: cs.primaryContainer,
-              labelBehavior:
-                  NavigationDestinationLabelBehavior.alwaysShow,
+              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
               destinations: [
                 for (final t in _tabs)
                   NavigationDestination(
