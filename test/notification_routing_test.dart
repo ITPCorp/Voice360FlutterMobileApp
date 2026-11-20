@@ -40,6 +40,10 @@ void main() {
       expect(target.id, '73');
       expect(target.number, '+12025550111');
     }
+    expect(NotificationDestination.parse({'title': 'New voicemail'})?.screen,
+        NotificationScreen.voicemail);
+    expect(NotificationDestination.parse({'title': 'New SMS Message'})?.screen,
+        NotificationScreen.messages);
     expect(
         NotificationDestination.parse(
             {'type': 'voice360_call', 'thread_id': 73}),

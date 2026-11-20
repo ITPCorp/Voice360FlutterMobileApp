@@ -86,7 +86,15 @@ class NotificationDestination {
           number: field(['to_phone_number', 'to_number']),
           peer: field(['from_number']));
     }
-    if (type == 'sms' || type == 'message' || type == 'mms') {
+    final title = field(['title'])?.toLowerCase();
+    if (title == 'new voicemail') {
+      return const NotificationDestination(NotificationScreen.voicemail);
+    }
+    if (type == 'sms' ||
+        type == 'message' ||
+        type == 'mms' ||
+        title == 'new sms message' ||
+        title == 'new message') {
       return const NotificationDestination(NotificationScreen.messages);
     }
     return null;

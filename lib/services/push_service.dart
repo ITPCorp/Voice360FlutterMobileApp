@@ -55,7 +55,11 @@ class PushService {
     _mailboxSub ??= events
         .where((e) => e.innerType == 'voicemail.received')
         .listen((event) {
-      final payload = {...event.data, 'type': 'voicemail'};
+      final payload = {
+        'type': 'voicemail',
+        'msg_id': event.data['msg_id'],
+        'voicemail_id': event.data['voicemail_id'],
+      };
       final target = NotificationDestination.parse(payload);
       if (target?.id == null) return;
       _showBanner('New voicemail', 'Tap to open the recording.', payload,
@@ -249,11 +253,18 @@ class PushService {
   // FCM → UI
   // ──────────────────────────────────────────────────────────────────
 
+  Map<String, dynamic> _tapPayload(RemoteMessage message) => {
+        if (message.notification?.title != null)
+          'title': message.notification!.title,
+        ...message.data,
+      };
+
   Future<void> _handleForegroundMessage(RemoteMessage message) async {
     // Call pushes are handled natively (AppWakeMessagingService); never show
     // them as a message banner.
     if (message.data['type'] == 'voice360_call') return;
-    final destination = NotificationDestination.parse(message.data);
+    final payload = _tapPayload(message);
+    final destination = NotificationDestination.parse(payload);
     final threadId = destination?.screen == NotificationScreen.thread
         ? destination?.id
         : null;
@@ -272,7 +283,7 @@ class PushService {
     final id = destination?.screen == NotificationScreen.voicemail
         ? Object.hash('voicemail', destination?.id) & 0x7fffffff
         : message.hashCode;
-    await _showBanner(title, body, message.data, id);
+    await _showBanner(title, body, payload, id);
   }
 
   Future<void> _showBanner(
@@ -301,7 +312,7 @@ class PushService {
   }
 
   void _routeFromRemoteMessage(RemoteMessage message) {
-    handleTap(message.data);
+    handleTap(_tapPayload(message));
   }
 
   void _routeFromPayload(String? payload) {
