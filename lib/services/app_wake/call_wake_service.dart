@@ -70,6 +70,17 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   String? get voipToken => _voipToken;
   Stream<String> get voipTokenChanges => _voipTokenCtl.stream;
 
+  int? _iosFirebaseStartedAt;
+  int? _iosFirebaseReadyAt;
+
+  void markIosFirebaseStarted() {
+    _iosFirebaseStartedAt ??= DateTime.now().millisecondsSinceEpoch;
+  }
+
+  void markIosFirebaseReady() {
+    _iosFirebaseReadyAt ??= DateTime.now().millisecondsSinceEpoch;
+  }
+
   /// Last wake timings, newest first (debug screen).
   final RxList<String> recentTimings = <String>[].obs;
 
@@ -802,6 +813,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   Future<void> _saveTiming(WakeCall c) async {
     final m = c.t.toJson(c.callId);
+    if (Platform.isIOS && c.t.coldStart) {
+      m['firebase_start_ms'] = c.t.since(_iosFirebaseStartedAt);
+      m['firebase_ready_ms'] = c.t.since(_iosFirebaseReadyAt);
+    }
     recentTimings.insert(0, _timingLine(m));
     if (recentTimings.length > 20) recentTimings.removeRange(20, recentTimings.length);
     try {

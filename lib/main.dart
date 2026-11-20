@@ -93,6 +93,7 @@ Future<void> _bootstrapInBackground() async {
     if (Platform.isIOS) {
       // FlutterFire's Dart registry starts empty even when the default
       // native app is already configured from GoogleService-Info.plist.
+      CallWakeService.instance.markIosFirebaseStarted();
       try {
         await Firebase.initializeApp();
       } on FirebaseException catch (error) {
@@ -104,6 +105,7 @@ Future<void> _bootstrapInBackground() async {
         // Confirm the default app is available to Dart before wiring messaging.
         Firebase.app();
       }
+      CallWakeService.instance.markIosFirebaseReady();
     } else {
       Firebase.app();
     }
