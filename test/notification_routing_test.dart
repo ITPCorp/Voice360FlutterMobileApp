@@ -100,6 +100,72 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  for (final state in ['terminated', 'background', 'other thread']) {
+    for (final missed in [true, false]) {
+      final type = missed ? 'missed call' : 'voicemail';
+      testWidgets('$type tap from $state opens the requested record',
+          (tester) async {
+        addTearDown(Get.reset);
+        final home = Get.put<BaseScreenController>(_Home());
+        Get.put<VoiceMailsController>(_Mailbox()).voiceMails = [
+          VoiceMails(pk: 17, msgId: 'previous'),
+          VoiceMails(pk: 22, msgId: 'requested'),
+        ];
+        final push = PushService();
+        final payload = missed
+            ? {'type': 'missed_call', 'caller_name': 'Requested caller'}
+            : {'type': 'voicemail', 'msg_id': 'requested'};
+        if (state == 'terminated') push.handleTap(payload);
+        await tester.pumpWidget(GetMaterialApp(
+          initialRoute: Routes.BASE_SCREEN_ROUTE,
+          getPages: [
+            GetPage(
+                name: Routes.BASE_SCREEN_ROUTE, page: () => const Scaffold()),
+            GetPage(
+                name: Routes.CHAT_SCREEN_ROUTE,
+                page: () => const Scaffold(body: Text('Other chat'))),
+            GetPage(
+                name: Routes.VOICE_MAIL_DETAILS_ROUTE,
+                page: () => Builder(builder: (context) {
+                      final recording = ModalRoute.of(context)!
+                          .settings
+                          .arguments as VoiceMails;
+                      return Scaffold(body: Text(recording.msgId!));
+                    })),
+          ],
+        ));
+        await tester.pumpAndSettle();
+        push.flushPendingNavigation();
+        if (state != 'terminated') {
+          home.updateCurrentTab(2);
+          Get.toNamed(Routes.CHAT_SCREEN_ROUTE, arguments: ['9002']);
+          await tester.pumpAndSettle();
+          expect(find.text('Other chat'), findsOneWidget);
+          if (state == 'background') {
+            tester.binding
+                .handleAppLifecycleStateChanged(AppLifecycleState.paused);
+            tester.binding
+                .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+          }
+          push.handleTap(payload);
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Other chat'), findsNothing);
+        if (missed) {
+          expect(Get.currentRoute, Routes.BASE_SCREEN_ROUTE);
+          expect(home.currentTab.value, 0);
+          expect(home.dialTab, 1);
+          expect(home.missedCall.value?.caller, 'Requested caller');
+        } else {
+          expect(home.currentTab.value, 3);
+          expect(find.text('requested'), findsOneWidget);
+          expect(find.text('previous'), findsNothing);
+        }
+        await tester.pumpWidget(const SizedBox());
+      });
+    }
+  }
+
   testWidgets(
       'cold launch, replacement conversation, missed call and exact voicemail',
       (tester) async {
