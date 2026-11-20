@@ -33,7 +33,9 @@ class CallOngoingService : Service() {
 
     companion object {
         private const val TAG = "CallOngoing"
-        private const val CHANNEL_ID = "voice360_ongoing_call"
+        // IMPORTANCE_DEFAULT (silent): a LOW channel puts the notification in the
+        // collapsed "Silent" section where its buttons are hidden.
+        private const val CHANNEL_ID = "voice360_call_active"
         const val NOTIFICATION_ID = 0x0360CA11
 
         fun startOrUpdate(context: Context, args: Map<String, Any?>) {
@@ -52,7 +54,7 @@ class CallOngoingService : Service() {
                 // background on Android 12+): still post the notification.
                 Log.w(TAG, "startForegroundService refused: ${e.message}")
                 (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                    .notify(NOTIFICATION_ID, build(context, i))
+                    .notify(NOTIFICATION_ID, build(context, i, callStyle = false))
             }
         }
 
@@ -67,7 +69,7 @@ class CallOngoingService : Service() {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             if (nm.getNotificationChannel(CHANNEL_ID) == null) {
                 nm.createNotificationChannel(
-                    NotificationChannel(CHANNEL_ID, "Calls in progress", NotificationManager.IMPORTANCE_LOW)
+                    NotificationChannel(CHANNEL_ID, "Calls in progress", NotificationManager.IMPORTANCE_DEFAULT)
                         .apply {
                             setSound(null, null)
                             enableVibration(false)
@@ -81,7 +83,12 @@ class CallOngoingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
 
-        fun build(context: Context, i: Intent): Notification {
+        /**
+         * callStyle = Android's call notification (top of the shade, caller,
+         * timer, Hang up button). Only allowed for a foreground service, so the
+         * fallback path (no foreground service) posts the plain style.
+         */
+        fun build(context: Context, i: Intent, callStyle: Boolean = true): Notification {
             ensureChannel(context)
             val name = i.getStringExtra("name").orEmpty()
             val number = i.getStringExtra("number").orEmpty()
@@ -104,6 +111,7 @@ class CallOngoingService : Service() {
                 flags()
             )
 
+            val hangup = action(CallActionReceiver.HANGUP, 4)
             val b = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(context.applicationInfo.icon)
                 .setContentTitle(if (name.isNotEmpty()) name else number)
@@ -116,9 +124,18 @@ class CallOngoingService : Service() {
                 .setSilent(true)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setContentIntent(open)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .addAction(0, if (muted) "Unmute" else "Mute", action(CallActionReceiver.MUTE, 2))
                 .addAction(0, if (speaker) "Speaker off" else "Speaker", action(CallActionReceiver.SPEAKER, 3))
-                .addAction(0, "Hang up", action(CallActionReceiver.HANGUP, 4))
+            if (callStyle) {
+                val person = androidx.core.app.Person.Builder()
+                    .setName(if (name.isNotEmpty()) name else number.ifEmpty { "Call" })
+                    .setImportant(true)
+                    .build()
+                b.setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangup))
+            } else {
+                b.addAction(0, "Hang up", hangup)
+            }
             if (connectedAt > 0) {
                 b.setWhen(connectedAt).setShowWhen(true).setUsesChronometer(true)
             } else {
@@ -131,7 +148,12 @@ class CallOngoingService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val n = build(this, intent ?: Intent())
+        val n = try {
+            build(this, intent ?: Intent())
+        } catch (e: Exception) {
+            Log.w(TAG, "CallStyle failed, plain notification: ${e.message}")
+            build(this, intent ?: Intent(), callStyle = false)
+        }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL

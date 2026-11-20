@@ -47,6 +47,9 @@ object AppWake {
     /** call_id -> "ringing" | "answered", for calls shown in this process. */
     private val active = mutableMapOf<String, String>()
 
+    /** call_id -> (number, name), so the missed-call notice names the caller. */
+    private val callers = mutableMapOf<String, Pair<String, String>>()
+
     fun uuidFor(callId: String): String =
         UUID.nameUUIDFromBytes("voice360:$callId".toByteArray()).toString()
 
@@ -168,6 +171,8 @@ object AppWake {
                 // lives on an engine.
                 engine(context)
                 active[callId] = "ringing"
+                callers[callId] = Pair(data["caller_id_number"] ?: "", data["caller_id_name"] ?: "")
+                if (callers.size > 30) callers.remove(callers.keys.first())
                 val d = callData(callId, data["caller_id_number"] ?: "", data["caller_id_name"] ?: "")
                 val plugin = FlutterCallkitIncomingPlugin.getInstance()
                 if (plugin != null) {
@@ -234,7 +239,8 @@ object AppWake {
         val state = active.remove(callId)
         markEnded(context, callId)
         if (state == null) return
-        val bundle = callData(callId, "", "").toBundle()
+        val who = callers[callId] ?: Pair("", "")
+        val bundle = callData(callId, who.first, who.second).toBundle()
         val intent = if (reason == "missed" && state == "ringing") {
             CallkitIncomingBroadcastReceiver.getIntentTimeout(context, bundle)
         } else {
