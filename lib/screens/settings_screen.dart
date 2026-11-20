@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:itp_voice/services/app_wake/full_screen_calls.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/cache/cache_service.dart';
 import 'package:itp_voice/controllers/call_settings_controller.dart';
@@ -43,6 +44,16 @@ class SettingsScreen extends StatelessWidget {
             vertical: V360Spacing.s4,
           ),
           children: [
+            if (FullScreenCalls.instance.allowed.value == false) ...[
+              V360Card(padding: EdgeInsets.zero, child: ListTile(
+                leading: const Icon(Icons.notifications_active_outlined),
+                title: const Text('Full-screen calls'),
+                subtitle: const Text('Off'),
+                trailing: TextButton(onPressed: FullScreenCalls.instance.openSettings, child: const Text('Fix')),
+                onTap: FullScreenCalls.instance.openSettings,
+              )),
+              const SizedBox(height: V360Spacing.s4),
+            ],
             _sectionLabel(context, 'Appearance'),
             const SizedBox(height: V360Spacing.s2),
             _appearanceCard(context, settings),

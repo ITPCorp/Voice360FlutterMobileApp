@@ -45,6 +45,7 @@ object AudioRoutes {
             }
             return mapOf(
                 "route" to telecomName(cs.route),
+                "earpiece_active" to (cs.route == CallAudioState.ROUTE_EARPIECE),
                 "available" to available,
                 "via" to "telecom",
                 "bluetooth_name" to bt,
@@ -79,6 +80,7 @@ object AudioRoutes {
             return mapOf(
                 "route" to (cur?.let { deviceName(it.type) } ?: "earpiece"),
                 "available" to available,
+                "earpiece_active" to (cur?.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE),
                 "via" to "audiomanager",
                 "bluetooth_name" to bt?.productName?.toString(),
             )
@@ -95,7 +97,8 @@ object AudioRoutes {
         if (am.isWiredHeadsetOn) available.add("wired")
         val outs = am.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         if (outs.any { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }) available.add("bluetooth")
-        return mapOf("route" to route, "available" to available, "via" to "audiomanager", "bluetooth_name" to null)
+        return mapOf("route" to route, "earpiece_active" to (route == "earpiece" &&
+            outs.any { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }), "available" to available, "via" to "audiomanager", "bluetooth_name" to null)
     }
 
     /** Telecom calls only. Returns false when there is no Telecom connection (Dart then uses WebRTC). */

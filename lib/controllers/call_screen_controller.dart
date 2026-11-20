@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
@@ -66,9 +67,11 @@ class CallScreenController extends GetxController implements SipUaHelperListener
             CallWakeService.instance.isAnsweredByWake(call!.id) || active.isConnected;
       }
     }
-    proximityStream = ProximitySensor.events.listen((event) {
-      isNear.value = event > 0;
-    });
+    if (Platform.isIOS) {
+      proximityStream = ProximitySensor.events.listen((event) {
+        isNear.value = event > 0;
+      });
+    }
     if (!_audioServiceReady) {
       _audioServiceReady = true;
       try {

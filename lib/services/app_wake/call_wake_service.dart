@@ -13,6 +13,7 @@ import 'package:itp_voice/models/get_devices_reponse_model/devices.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/active_call_service.dart';
 import 'package:itp_voice/services/app_wake/wake_call.dart';
+import 'full_screen_calls.dart';
 import 'package:itp_voice/services/sip_settings.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -43,7 +44,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   static const MethodChannel _channel = MethodChannel('voice360/app_wake');
   static const _timingsKey = 'app_wake_timings';
-  static const _permsAskedKey = 'app_wake_perms_asked_v1';
+  bool _callUiReady = false;
 
   /// How long a woken call may wait for its INVITE before the UI is dropped.
   /// The dialplan never waits longer than the user's ring time (+2 s).
@@ -125,6 +126,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     }
     unawaited(_loadTimings());
     await _ready();
+    unawaited(FullScreenCalls.instance.check());
     if (!_readyDone.isCompleted) _readyDone.complete();
   }
 
@@ -703,6 +705,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     switch (state) {
       case AppLifecycleState.resumed:
         _foreground = true;
+        unawaited(_checkFullScreenCalls());
         _quietTimer?.cancel();
         _quietTimer = null;
             if (!_uaRunning && _signedInUi()) {
@@ -758,6 +761,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   /// Logout: drop everything.
   Future<void> onLogout() async {
+    _callUiReady = false;
     for (final c in _calls.values.toList()) {
       _endNative(c, 'failed');
       _finish(c, 'logout');
@@ -767,8 +771,12 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   // ───────────────────────────── permissions ─────────────────────────────
 
-  /// Ask once for what a call answered from the lock screen needs: the mic,
-  /// and on Android 13/14+ notifications and full-screen intents.
+  Future<void> _checkFullScreenCalls() => FullScreenCalls.instance.check(
+      mayPrompt: () => _foreground && _callUiReady && _signedInUi() &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+          _calls.isEmpty && _activeSip.isEmpty);
+
+  /// The signed-in home screen is ready for permission prompts.
   Future<void> ensureCallPermissions() async {
     try {
       final mic = await Permission.microphone.request();
@@ -784,14 +792,8 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
             'Allow notifications in Settings so VOICE360 can ring for calls.',
       });
     } catch (_) {}
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final can = await FlutterCallkitIncoming.canUseFullScreenIntent();
-      if (can == false && prefs.getBool(_permsAskedKey) != true) {
-        await prefs.setBool(_permsAskedKey, true);
-        await FlutterCallkitIncoming.requestFullIntentPermission();
-      }
-    } catch (_) {}
+    _callUiReady = true;
+    await _checkFullScreenCalls();
   }
 
   // ─────────────────────────────── timings ───────────────────────────────
@@ -813,6 +815,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   Future<void> _saveTiming(WakeCall c) async {
     final m = c.t.toJson(c.callId);
+    if (Platform.isAndroid) m['fsi_allowed'] = FullScreenCalls.instance.allowed.value ?? 'unknown';
     if (Platform.isIOS && c.t.coldStart) {
       m['firebase_start_ms'] = c.t.since(_iosFirebaseStartedAt);
       m['firebase_ready_ms'] = c.t.since(_iosFirebaseReadyAt);
@@ -830,7 +833,17 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   /// Raw JSON rows (newest first) for copying off the phone.
   Future<List<String>> timingRows() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_timingsKey) ?? const [];
+    final rows = prefs.getStringList(_timingsKey) ?? const <String>[];
+    if (!Platform.isAndroid) return rows;
+    await FullScreenCalls.instance.check();
+    if (rows.isEmpty) {
+      return [jsonEncode({'fsi_allowed': FullScreenCalls.instance.allowed.value ?? 'unknown'})];
+    }
+    return rows.map((line) {
+      final data = jsonDecode(line) as Map<String, dynamic>;
+      data.putIfAbsent('fsi_allowed', () => 'unknown');
+      return jsonEncode(data);
+    }).toList();
   }
 
   static String _timingLine(Map<String, dynamic> m) {

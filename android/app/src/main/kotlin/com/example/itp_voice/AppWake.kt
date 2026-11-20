@@ -107,17 +107,26 @@ object AppWake {
                         appContext?.let { markEnded(it, callId) }
                         result.success(null)
                     }
+                    "fsiAllowed" -> result.success(appContext?.let { FullScreenCalls.allowed(it) })
+                    "openFsiSettings" -> result.success(appContext?.let { FullScreenCalls.openSettings(it) } == true)
                     "callOngoing" -> {
                         @Suppress("UNCHECKED_CAST")
                         val args = (call.arguments as? Map<String, Any?>) ?: emptyMap()
                         appContext?.let { CallOngoingService.startOrUpdate(it, args) }
                         result.success(null)
                     }
+                    "setCallProximity" -> {
+                        appContext?.let { CallProximity.setEligible(it, call.argument<Boolean>("eligible") == true, call.argument<String>("uuid")) }
+                        result.success(null)
+                    }
                     "audioRoute" -> {
                         val ctx = appContext
-                        result.success(if (ctx == null) null else AudioRoutes.state(ctx, call.argument<String>("uuid")))
+                        result.success(ctx?.let {
+                            AudioRoutes.state(it, call.argument<String>("uuid")).also { route -> CallProximity.route(it, route) }
+                        })
                     }
                     "setAudioRoute" -> {
+                        if (call.argument<String>("route") != "earpiece") CallProximity.release()
                         // true = done through Telecom; false = no Telecom call, Dart uses WebRTC.
                         result.success(AudioRoutes.setTelecomRoute(
                             call.argument<String>("uuid"), call.argument<String>("route") ?: "earpiece"))

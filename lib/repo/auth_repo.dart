@@ -15,6 +15,7 @@ import 'package:itp_voice/repo/shares_preference_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/app_wake/call_wake_service.dart';
+import 'package:itp_voice/services/app_wake/full_screen_calls.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/services/saved_login.dart';
 import 'package:itp_voice/services/session_keeper.dart';
@@ -163,6 +164,7 @@ class AuthRepo {
         final t = await CallWakeService.instance.waitForVoipToken();
         if (t != null && t.isNotEmpty) out['mobile_voip_token'] = t;
       } else if (Platform.isAndroid) {
+        await FullScreenCalls.instance.check();
         out['mobile_platform'] = 'android';
       }
     } catch (_) {}

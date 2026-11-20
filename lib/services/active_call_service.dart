@@ -55,6 +55,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   Timer? _ticker;
   bool _initialized = false;
   bool _notifShown = false;
+  bool _ending = false;
 
   SIPUAHelper get helper => SipHolder.helper;
 
@@ -105,6 +106,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
           }
           localStream = stream;
         }
+        _syncProximity();
         return;
       case CallStateEnum.MUTED:
         if (current?.id == c.id && (s.audio ?? false)) muted.value = true;
@@ -116,7 +118,10 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
         return;
       case CallStateEnum.HOLD:
       case CallStateEnum.UNHOLD:
-        if (current?.id == c.id) hold.value = s.state == CallStateEnum.HOLD;
+        if (current?.id == c.id) {
+          hold.value = s.state == CallStateEnum.HOLD;
+          _syncProximity();
+        }
         return;
       case CallStateEnum.ENDED:
       case CallStateEnum.FAILED:
@@ -130,6 +135,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
           connectedAt = DateTime.now();
           _startTicker();
           _startRoutePoll();
+          _syncProximity();
         }
         _pushNotification();
     }
@@ -138,6 +144,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   bool _ended(Call c) => c.state == CallStateEnum.ENDED || c.state == CallStateEnum.FAILED;
 
   void _start(Call c) {
+    _ending = false;
     call.value = c;
     state.value = CallStateEnum.CALL_INITIATION;
     connectedAt = null;
@@ -159,6 +166,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   void _clear() {
     _log('call ${call.value?.id} ended');
     call.value = null;
+    _syncProximity();
     state.value = CallStateEnum.NONE;
     connectedAt = null;
     elapsed.value = '';
@@ -307,6 +315,18 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     } catch (_) {}
   }
 
+  void _syncProximity() {
+    if (!Platform.isAndroid) return;
+    final c = call.value;
+    final eligible = c != null && connectedAt != null && !_ending &&
+        c.voiceOnly && !hold.value && !c.session.isOnHold().containsValue(true) &&
+        (localStream?.getVideoTracks().isEmpty ?? true) &&
+        (remoteStream?.getVideoTracks().isEmpty ?? true);
+    _channel.invokeMethod<void>('setCallProximity', {
+      'eligible': eligible, 'uuid': eligible ? _nativeUuid : null,
+    }).catchError((Object error) => _log('proximity update failed: $error'));
+  }
+
   void _startRoutePoll() {
     _routePoll?.cancel();
     unawaited(refreshRoute());
@@ -317,6 +337,8 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     final c = call.value;
     if (c == null) return;
     try {
+      _ending = true;
+      _syncProximity();
       c.hangup();
     } catch (e) {
       _log('hangup failed: $e');
