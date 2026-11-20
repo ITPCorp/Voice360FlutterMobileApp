@@ -18,12 +18,17 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final BaseScreenController con = Get.find<BaseScreenController>();
   late final TabController _tabs;
+  late final Worker _missed;
   final TextEditingController _number = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 2, vsync: this);
+    _tabs = TabController(length: 2, vsync: this, initialIndex: con.dialTab);
+    _tabs.addListener(() => con.dialTab = _tabs.index);
+    _missed = ever(con.missedCall, (target) {
+      if (target != null) _tabs.animateTo(1);
+    });
     if (widget.initialValue != null) {
       _number.text = widget.initialValue!;
     }
@@ -31,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
+    _missed.dispose();
     _tabs.dispose();
     _number.dispose();
     super.dispose();

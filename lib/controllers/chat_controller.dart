@@ -31,6 +31,10 @@ import '../widgets/custom_toast.dart';
 /// view and can type the first message. On send, the new thread is created
 /// server-side and we promote ourselves to thread mode.
 class ChatController extends GetxController {
+  ChatController([this.routeArguments]);
+  final Object? routeArguments;
+  static ChatController? visible;
+  static String? get visibleThreadId => visible?.threadId.value;
   RxBool isLoading = false.obs;
   RxBool isMessageLoading = false.obs;
   MessagesRepo repo = MessagesRepo();
@@ -123,7 +127,7 @@ class ChatController extends GetxController {
   }
 
   void _parseArguments() {
-    final args = Get.arguments;
+    final args = routeArguments;
     if (args is! List) return;
 
     // arg 0: threadId (String|int) or null/empty in compose mode
@@ -162,8 +166,10 @@ class ChatController extends GetxController {
     // mode it's the peer.
     final myNumbers = locator<NumbersService>().chatNumbers;
     if (secondArg.isNotEmpty &&
-        myNumbers.any((n) => n.replaceAll(RegExp(r'\D'), '') ==
-            secondArg.replaceAll(RegExp(r'\D'), ''))) {
+        (threadId.value != null ||
+            myNumbers.any((n) =>
+                n.replaceAll(RegExp(r'\D'), '') ==
+                secondArg.replaceAll(RegExp(r'\D'), '')))) {
       myNumber = secondArg;
     } else {
       // Compose entry: `secondArg` is the peer; assume the first chat number
@@ -456,8 +462,7 @@ class ChatController extends GetxController {
       }
       if (threadNumber == null) {
         threadNumber = _messages.value?.result?.participants
-            ?.firstWhere((p) => p.isSelf != true,
-                orElse: () => Participants())
+            ?.firstWhere((p) => p.isSelf != true, orElse: () => Participants())
             .number;
         loadTitle.value = !loadTitle.value;
       }
@@ -512,9 +517,7 @@ class ChatController extends GetxController {
     _messages.value = GetThreadMessagesResponseModel(
       result: Result(
         messages: res.result?.messages ?? const [],
-        participants: patched.isEmpty
-            ? existing.result?.participants
-            : patched,
+        participants: patched.isEmpty ? existing.result?.participants : patched,
       ),
       errors: res.errors,
       error: res.error,
@@ -558,8 +561,7 @@ class ChatController extends GetxController {
         CustomToast.showToast(reason, true);
         return;
       }
-    } else if (contact?.dndSms == true ||
-        optedOutMembers(members).isNotEmpty) {
+    } else if (contact?.dndSms == true || optedOutMembers(members).isNotEmpty) {
       CustomToast.showToast(
         'This contact has opted out of SMS. You cannot send messages to '
         'this contact.',

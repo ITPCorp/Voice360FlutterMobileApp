@@ -63,6 +63,15 @@ class VoiceMailsController extends GetxController {
     update();
   }
 
+  Future<VoiceMails?> findNotificationMessage(String id) async {
+    VoiceMails? find() => voiceMails
+        .firstWhereOrNull((v) => v.msgId == id || v.pk?.toString() == id);
+    final cached = find();
+    if (cached != null) return cached;
+    await fetchVoiceMails();
+    return find();
+  }
+
   deleteVoiceMail(id) async {
     Get.back();
     CustomLoader.showLoader();

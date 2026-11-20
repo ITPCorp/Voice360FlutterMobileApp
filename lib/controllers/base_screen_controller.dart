@@ -10,6 +10,7 @@ import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/push_service.dart';
+import 'package:itp_voice/services/notification_destination.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -19,6 +20,15 @@ import 'package:sip_ua/sip_ua.dart';
 class BaseScreenController extends GetxController
     implements SipUaHelperListener {
   RxInt currentTab = 0.obs;
+
+  final missedCall = Rxn<NotificationDestination>();
+  int dialTab = 0;
+
+  void showMissedCall(NotificationDestination target) {
+    dialTab = 1;
+    missedCall.value = target;
+    updateCurrentTab(0);
+  }
 
   SIPUAHelper? helper;
 
@@ -153,13 +163,15 @@ class BaseScreenController extends GetxController
       final mic = await Permission.microphone.request();
       await Permission.camera.request();
       if (!mic.isGranted) {
-        CustomToast.showToast('Microphone permission is required to place calls', true);
+        CustomToast.showToast(
+            'Microphone permission is required to place calls', true);
         return null;
       }
     }
     if (helper == null || !helper!.connected) {
       CustomToast.showToast(
-          'Not connected to call server — check your internet and try again', true);
+          'Not connected to call server — check your internet and try again',
+          true);
       // Nudge the registrar in case we got into a bad state.
       try {
         await CallWakeService.instance.stopUa('not connected on dial');
@@ -203,12 +215,14 @@ class BaseScreenController extends GetxController
     } else {
       mediaConstraints['video'] = !voiceonly;
       try {
-        mediaStream =
-            await flwebrtc.navigator.mediaDevices.getUserMedia(mediaConstraints);
+        mediaStream = await flwebrtc.navigator.mediaDevices
+            .getUserMedia(mediaConstraints);
         helper!.call(number, voiceOnly: voiceonly, mediaStream: mediaStream);
       } catch (e) {
         print('Call failed: $e');
-        CustomToast.showToast('Could not start the call. Check your connection and try again.', true);
+        CustomToast.showToast(
+            'Could not start the call. Check your connection and try again.',
+            true);
       }
       return null;
     }
@@ -223,10 +237,7 @@ class BaseScreenController extends GetxController
   void onNewReinvite(ReInvite event) {
     // TODO: implement onNewReinvite
   }
-
 }
-
-
 
 // UaSettings settings = UaSettings();
 //     settings.webSocketUrl = "wss://ws.dev.sip.itpvoice.net:5066";
@@ -249,6 +260,6 @@ class BaseScreenController extends GetxController
 //     settings.userAgent = 'Flutter SIP Client v1.0';
 //     settings.dtmfMode = DtmfMode.INFO;
 //     settings.register = true;
-    // settings.transportType = TransportType.WS;
-    // settings.webSocketSettings.transport_scheme = "wss";
-    // settings.registrarServer = "sip:${_realm}";
+// settings.transportType = TransportType.WS;
+// settings.webSocketSettings.transport_scheme = "wss";
+// settings.registrarServer = "sip:${_realm}";

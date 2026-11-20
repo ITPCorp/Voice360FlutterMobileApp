@@ -39,6 +39,13 @@ def manager = new File(upstream, managerPath).getText('UTF-8')
     manager = manager.replace(original, """${builder}?.setSmallIcon(R.drawable.ic_stat_voice360)
         ${builder}?.setLargeIcon(android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.notification_voice360))""")
 }
+// The plugin normally launches the app with no indication that the tap was
+// on a missed call. Preserve the call bundle and give only this intent an action.
+def missedTap = ~/(?s)getAppPendingIntent\(\s*missedNotificationId, data\s*\)/
+if (!missedTap.matcher(manager).find()) {
+    throw new GradleException('Review the missed-call tap after the CallKit plugin update')
+}
+manager = manager.replaceFirst(missedTap, 'PendingIntent.getActivity(context, missedNotificationId, AppUtils.getAppIntent(context, action = "com.appicator.itp_voice.OPEN_RECENT", data = data)?.putExtra("posted_at", System.currentTimeMillis()), getFlagPendingIntent())')
 def files = new groovy.ant.AntBuilder()
 files.copy(todir: local) {
     fileset(dir: upstream, includes: 'build.gradle*,consumer-rules.pro,gradle.properties,src/**', excludes: managerPath)

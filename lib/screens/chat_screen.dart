@@ -18,24 +18,25 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  // Force-replace the controller on every screen mount so a re-navigation
-  // (eg. from a notification tap landing on a different thread) re-runs
-  // onInit and re-parses Get.arguments. Without this, GetX silently
-  // returns the prior thread's controller and the screen renders the
-  // stale conversation.
-  late final ChatController con = _freshController();
+  late final ChatController con;
   final BaseScreenController base = Get.find<BaseScreenController>();
   final ScrollController _scroll = ScrollController();
+  bool _bound = false;
 
-  ChatController _freshController() {
-    if (Get.isRegistered<ChatController>()) {
-      Get.delete<ChatController>(force: true);
-    }
-    return Get.put(ChatController());
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_bound) return;
+    _bound = true;
+    con = ChatController(ModalRoute.of(context)?.settings.arguments);
+    ChatController.visible = con;
+    con.onStart();
   }
 
   @override
   void dispose() {
+    if (identical(ChatController.visible, con)) ChatController.visible = null;
+    con.onDelete();
     _scroll.dispose();
     super.dispose();
   }
@@ -697,10 +698,8 @@ class _CallTimelineEntry extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
-    final missed =
-        (message.callStatus ?? '').contains('missed');
-    final answered =
-        (message.callStatus ?? '').contains('answered');
+    final missed = (message.callStatus ?? '').contains('missed');
+    final answered = (message.callStatus ?? '').contains('answered');
     final inbound = (message.callDirection ?? 'inbound') != 'outbound';
     final aiCall = message.aiCall;
 
@@ -725,7 +724,8 @@ class _CallTimelineEntry extends StatelessWidget {
 
     final hasRecording = message.hasRecording;
     final hasTranscript = message.hasTranscript;
-    final recordingUrl = hasRecording ? CallMedia.recordingUrl(message.cdrPk) : null;
+    final recordingUrl =
+        hasRecording ? CallMedia.recordingUrl(message.cdrPk) : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: V360Spacing.s2),
@@ -767,9 +767,8 @@ class _CallTimelineEntry extends StatelessWidget {
                             label,
                             style: tt.bodyMedium?.copyWith(
                               fontWeight: FontWeight.w600,
-                              color: missed
-                                  ? V360Colors.callMissed
-                                  : cs.onSurface,
+                              color:
+                                  missed ? V360Colors.callMissed : cs.onSurface,
                             ),
                           ),
                           if (message.callDuration != null &&
@@ -786,8 +785,8 @@ class _CallTimelineEntry extends StatelessWidget {
                     if (showTimestamp)
                       Text(
                         _formatRelative(message.messageTimestamp),
-                        style: tt.labelSmall
-                            ?.copyWith(color: cs.onSurfaceVariant),
+                        style:
+                            tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
                       ),
                   ],
                 ),
@@ -854,8 +853,7 @@ class _CallTimelineEntry extends StatelessWidget {
           callerLabel: peerDisplay,
           myLabel: 'You',
           durationSeconds: message.callDuration,
-          filename:
-              'call-${message.cdrPk ?? message.pk ?? "recording"}.wav',
+          filename: 'call-${message.cdrPk ?? message.pk ?? "recording"}.wav',
         ),
       ),
     );
@@ -883,8 +881,7 @@ class _TranscriptPill extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.text_snippet_outlined,
-                  size: 14, color: cs.primary),
+              Icon(Icons.text_snippet_outlined, size: 14, color: cs.primary),
               const SizedBox(width: 6),
               Text(
                 'View transcript',

@@ -21,6 +21,31 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
   final BaseScreenController base = Get.find<BaseScreenController>();
   _Filter _filter = _Filter.all;
 
+  late final Worker _missed;
+  @override
+  void initState() {
+    super.initState();
+    _missed = ever(base.missedCall, (target) {
+      if (target != null) _revealMissed();
+    });
+    if (base.missedCall.value != null)
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealMissed());
+  }
+
+  void _revealMissed() {
+    if (!mounted) return;
+    setState(() => _filter = _Filter.all);
+    con.searchController.clear();
+    if (con.scrollController.hasClients) con.scrollController.jumpTo(0);
+    con.refreshCalls();
+  }
+
+  @override
+  void dispose() {
+    _missed.dispose();
+    super.dispose();
+  }
+
   bool _matchesFilter(CallHistory c) {
     final missed = (c.isMissed ?? false) && (c.isIncoming ?? false);
     final inbound = (c.isIncoming ?? false) && !missed;
@@ -53,6 +78,26 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
         return Column(
           children: [
             _buildSearchAndFilters(context),
+            Obx(() {
+              final target = base.missedCall.value;
+              final caller = target?.caller ?? target?.number;
+              if (caller == null || caller.isEmpty)
+                return const SizedBox.shrink();
+              final time = target?.time;
+              final local = time == null
+                  ? null
+                  : DateTime.fromMillisecondsSinceEpoch(time).toLocal();
+              return ListTile(
+                  leading: const Icon(Icons.call_missed_rounded),
+                  title: Text(caller),
+                  subtitle: Text(local == null
+                      ? 'Missed call'
+                      : 'Missed call · ${MaterialLocalizations.of(context).formatShortDate(local)} · ${TimeOfDay.fromDateTime(local).format(context)}'),
+                  trailing: IconButton(
+                      tooltip: 'Dismiss',
+                      icon: const Icon(Icons.close),
+                      onPressed: () => base.missedCall.value = null));
+            }),
             Expanded(
               child: con.isLoading && con.callHistoryList.isEmpty
                   ? const _CallHistoryLoading()
@@ -343,9 +388,8 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
   }
 
   void _openTranscriptModal(BuildContext context, CallHistory c) {
-    final name = (c.name ?? '').isNotEmpty
-        ? c.name!
-        : (c.numberToDial ?? 'Caller');
+    final name =
+        (c.name ?? '').isNotEmpty ? c.name! : (c.numberToDial ?? 'Caller');
     final url = c.hasRecording ? CallMedia.recordingUrl(c.cdrPk) : null;
     Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(

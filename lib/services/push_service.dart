@@ -6,6 +6,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
+import 'package:itp_voice/controllers/chat_controller.dart';
+import 'package:itp_voice/controllers/voicemails_controller.dart';
+import 'package:itp_voice/services/notification_destination.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/repo/auth_repo.dart';
@@ -49,7 +54,10 @@ class PushService {
   /// (cold launch sits on LoginScreen for ~3s of auto-login). ChatScreen
   /// needs BaseScreenController, so pushing it early throws and leaves a
   /// gray error page that also blocks the auto-login redirect.
-  List<String?>? _pendingThreadArgs;
+  NotificationDestination? _pending;
+  bool _homeReady = false;
+  int _generation = 0;
+  static const _nativeTaps = MethodChannel('voice360/notification_taps');
 
   /// One-time setup: notification channel, plugin init, listener wiring.
   /// Safe to call without Firebase being ready (will no-op the FCM parts).
@@ -69,6 +77,17 @@ class PushService {
         _routeFromPayload(resp.payload);
       },
     );
+
+    final launch = await _localNotifs.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp == true) {
+      _routeFromPayload(launch?.notificationResponse?.payload);
+    }
+    if (Platform.isAndroid) {
+      _nativeTaps.setMethodCallHandler((call) async {
+        if (call.method == 'available') await _takeNativeTap();
+      });
+      await _takeNativeTap();
+    }
 
     // Create the Android channel up front so the first notification doesn't
     // show as a low-importance one.
@@ -104,10 +123,7 @@ class PushService {
       final initialMessage =
           await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null) {
-        // Defer one frame so the navigator is ready.
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _routeFromRemoteMessage(initialMessage);
-        });
+        _routeFromRemoteMessage(initialMessage);
       }
 
       _cachedToken = await FirebaseMessaging.instance.getToken();
@@ -199,7 +215,9 @@ class PushService {
   /// doesn't keep receiving pushes after logout.
   Future<void> onLogout() async {
     _cachedToken = null;
-    _pendingThreadArgs = null;
+    _pending = null;
+    _homeReady = false;
+    _generation++;
     try {
       await FirebaseMessaging.instance.deleteToken();
     } catch (_) {}
@@ -219,11 +237,14 @@ class PushService {
     // Call pushes are handled natively (AppWakeMessagingService); never show
     // them as a message banner.
     if (message.data['type'] == 'voice360_call') return;
-    final threadId = _extractThreadId(message);
+    final destination = NotificationDestination.parse(message.data);
+    final threadId = destination?.screen == NotificationScreen.thread
+        ? destination?.id
+        : null;
     // Don't double-display if user is already inside the matching chat.
     if (threadId != null &&
         Get.currentRoute == Routes.CHAT_SCREEN_ROUTE &&
-        _argsThreadId() == threadId) {
+        ChatController.visibleThreadId == threadId) {
       return;
     }
 
@@ -256,135 +277,86 @@ class PushService {
   }
 
   void _routeFromRemoteMessage(RemoteMessage message) {
-    final data = message.data;
-    if (data['type'] == 'voice360_call') return;
-    final threadId = _extractThreadId(message);
-    if (threadId == null) return;
-    final toNumber = _extractToNumber(message);
-    _navigateToThread(threadId: threadId, toPhoneNumber: toNumber, fromNumber: data['from_number']?.toString());
+    handleTap(message.data);
   }
 
   void _routeFromPayload(String? payload) {
-    if (payload == null || payload.isEmpty) return;
+    if (payload == null) return;
     try {
       final data = jsonDecode(payload);
-      if (data is! Map) return;
-      final threadId = _readThreadIdFromMap(Map<String, dynamic>.from(data));
-      if (threadId == null) return;
-      final to = _readToNumberFromMap(Map<String, dynamic>.from(data));
-      _navigateToThread(threadId: threadId, toPhoneNumber: to, fromNumber: data['from_number']?.toString());
-    } catch (_) {}
+      if (data is Map) handleTap(data);
+    } on FormatException {
+      // An old notification can outlive the app version that created it.
+    }
   }
 
-  void _navigateToThread({
-    required String threadId,
-    String? toPhoneNumber,
-    String? fromNumber,
-  }) {
-    // ignore: avoid_print
-    print('[Push] navigate → thread=$threadId to=$toPhoneNumber from=$fromNumber');
-    if (!Get.isRegistered<BaseScreenController>()) {
-      _pendingThreadArgs = [threadId, toPhoneNumber, fromNumber];
-      return;
+  Future<void> _takeNativeTap() async {
+    try {
+      final data = await _nativeTaps.invokeMapMethod<String, dynamic>('take');
+      if (data != null) handleTap(data);
+    } on MissingPluginException {
+      // No Android activity attached to a background engine yet.
     }
-    // If we're already sitting in a chat screen (possibly for a different
-    // thread), Get.toNamed against the same route silently no-ops the
-    // initState path → ChatController is reused and Get.arguments is never
-    // re-parsed. Pop the existing chat first so the next push mounts a
-    // fresh _ChatScreenState (which then force-replaces the controller).
-    if (Get.currentRoute == Routes.CHAT_SCREEN_ROUTE) {
-      Get.until((route) => route.settings.name != Routes.CHAT_SCREEN_ROUTE);
-    }
-    Get.toNamed(
-      Routes.CHAT_SCREEN_ROUTE,
-      arguments: [threadId, toPhoneNumber, fromNumber],
-    );
   }
 
-  /// Called by BaseScreenController once the home screen is up. Opens the
-  /// thread from a notification that was tapped before login finished.
+  void handleTap(Map<Object?, Object?> payload) {
+    final destination = NotificationDestination.parse(payload);
+    if (destination == null) return;
+    _generation++;
+    _pending = destination;
+    if (_homeReady) _openPending();
+  }
+
   void flushPendingNavigation() {
-    final args = _pendingThreadArgs;
-    _pendingThreadArgs = null;
-    if (args == null) return;
-    _navigateToThread(
-      threadId: args[0]!,
-      toPhoneNumber: args[1],
-      fromNumber: args[2],
-    );
+    _homeReady = true;
+    _openPending();
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Payload extraction
-  //
-  // Backend (itp-voice-api → itp-crm-api) packs the SMS push as:
-  //   notification: { title, body }
-  //   data: {
-  //     service_name: 'itp_voice',
-  //     service_id: <account_id>,
-  //     message: <sms body>,
-  //     metadata: "{'message_thread_id': 489286, 'to_phone_number': '+1...'}"
-  //   }
-  // `metadata` is a Python-stringified dict (single quotes!) because the
-  // server runs `str(metadata)` before send. Tolerate both Python-str and JSON.
-  // ──────────────────────────────────────────────────────────────────
-
-  String? _extractThreadId(RemoteMessage m) =>
-      _readThreadIdFromMap(m.data);
-
-  String? _extractToNumber(RemoteMessage m) =>
-      _readToNumberFromMap(m.data);
-
-  String? _readThreadIdFromMap(Map<String, dynamic> data) {
-    // Newer / cleaner payloads may set the field directly.
-    final direct = data['message_thread_id']?.toString();
-    if (direct != null && direct.isNotEmpty) return direct;
-    final meta = _decodeMetadata(data['metadata']);
-    return meta?['message_thread_id']?.toString();
-  }
-
-  String? _readToNumberFromMap(Map<String, dynamic> data) {
-    final direct = data['to_phone_number']?.toString();
-    if (direct != null && direct.isNotEmpty) return direct;
-    final meta = _decodeMetadata(data['metadata']);
-    return meta?['to_phone_number']?.toString();
-  }
-
-  Map<String, dynamic>? _decodeMetadata(dynamic raw) {
-    if (raw == null) return null;
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    if (raw is String) {
-      // Try real JSON first.
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      } catch (_) {}
-      // Fall back to Python-stringified dict: {'k': 'v', 'n': 42}
-      // Convert single-quotes → double-quotes and re-parse.
-      try {
-        final fixed = raw
-            .replaceAll(RegExp(r"'"), '"')
-            .replaceAll('None', 'null')
-            .replaceAll('True', 'true')
-            .replaceAll('False', 'false');
-        final decoded = jsonDecode(fixed);
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      } catch (_) {}
+  Future<void> _openPending() async {
+    final target = _pending;
+    if (target == null || !Get.isRegistered<BaseScreenController>()) return;
+    _pending = null;
+    final generation = _generation;
+    final base = Get.find<BaseScreenController>();
+    if (target.screen == NotificationScreen.thread &&
+        Get.currentRoute == Routes.CHAT_SCREEN_ROUTE &&
+        ChatController.visibleThreadId == target.id) return;
+    Get.until((r) => r.settings.name == Routes.BASE_SCREEN_ROUTE || r.isFirst);
+    switch (target.screen) {
+      case NotificationScreen.recent:
+        base.showMissedCall(target);
+        break;
+      case NotificationScreen.messages:
+        base.updateCurrentTab(2);
+        break;
+      case NotificationScreen.thread:
+        base.updateCurrentTab(2);
+        Get.toNamed(Routes.CHAT_SCREEN_ROUTE,
+            preventDuplicates: false,
+            arguments: [target.id, target.number, target.peer]);
+        break;
+      case NotificationScreen.voicemail:
+        base.updateCurrentTab(3);
+        if (target.id == null) return;
+        await WidgetsBinding.instance.endOfFrame;
+        if (generation != _generation ||
+            base.currentTab.value != 3 ||
+            Get.currentRoute != Routes.BASE_SCREEN_ROUTE) return;
+        final mailbox = Get.find<VoiceMailsController>();
+        final match = await mailbox.findNotificationMessage(target.id!);
+        if (generation != _generation ||
+            base.currentTab.value != 3 ||
+            Get.currentRoute != Routes.BASE_SCREEN_ROUTE) return;
+        if (match == null) {
+          Get.snackbar(
+              'Voicemail',
+              mailbox.loadFailed
+                  ? 'Could not load this voicemail. Try again.'
+                  : 'This voicemail is no longer in your mailbox.');
+        } else {
+          Get.toNamed(Routes.VOICE_MAIL_DETAILS_ROUTE, arguments: match);
+        }
+        break;
     }
-    return null;
-  }
-
-  /// Best-effort lookup of the thread id from the current Get route arguments
-  /// — used to suppress the foreground banner when the user is already
-  /// looking at the matching chat. We're lenient about shape since chat
-  /// arguments evolved over time.
-  String? _argsThreadId() {
-    final args = Get.arguments;
-    if (args is List && args.isNotEmpty) {
-      final first = args.first;
-      if (first == null) return null;
-      return first.toString();
-    }
-    return null;
   }
 }
