@@ -67,6 +67,7 @@ class MessagesRepo {
   }
 
   Future<void> markAsRead(String threadId, String myNumber) async {
+    if (DemoModeService.instance.enabled) return;
     String? apiId = SharedPreferencesMethod.getString(StorageKeys.API_ID);
     try {
       String number = myNumber;
