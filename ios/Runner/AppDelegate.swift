@@ -134,6 +134,13 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     provider = CXProvider(configuration: config)
     super.init()
     provider.setDelegate(self, queue: nil)
+    // Route changes from anywhere (CallKit's own speaker button, a headset
+    // plugged in or connected) update the in-call screen's Speaker button.
+    NotificationCenter.default.addObserver(
+      forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      self?.send(["event": "audioRoute"])
+    }
   }
 
   static func uuidFor(_ callId: String) -> UUID {
@@ -173,6 +180,11 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     case "markEnded":
       markEnded(callId)
       result(nil)
+    case "audioRoute":
+      result(AppWakeCalls.audioRouteState())
+    case "setAudioRoute":
+      AppWakeCalls.setAudioRoute(args["route"] as? String ?? "earpiece")
+      result(true)
     case "connected", "callOngoing", "callEnded":
       // callOngoing/callEnded drive Android's ongoing-call notification. On
       // iOS, CallKit (woken calls) and the green status-bar pill (any call
@@ -207,6 +219,69 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     voipToken = token.isEmpty ? nil : token
     UserDefaults.standard.set(voipToken, forKey: "voice360_voip_token")
     if !token.isEmpty { send(["event": "voipToken", "token": token]) }
+  }
+
+  // MARK: Audio route (in-call screen Speaker button)
+
+  private static func routeName(_ port: AVAudioSession.Port) -> String {
+    switch port {
+    case .builtInSpeaker: return "speaker"
+    case .builtInReceiver: return "earpiece"
+    case .bluetoothHFP, .bluetoothA2DP, .bluetoothLE, .carAudio: return "bluetooth"
+    case .headphones, .headsetMic, .usbAudio, .lineOut: return "wired"
+    default: return "earpiece"
+    }
+  }
+
+  static func audioRouteState() -> [String: Any] {
+    let session = AVAudioSession.sharedInstance()
+    let out = session.currentRoute.outputs.first
+    var available = ["earpiece", "speaker"]
+    var btName: String? = nil
+    for input in session.availableInputs ?? [] {
+      let name = routeName(input.portType)
+      if name == "bluetooth" { btName = input.portName }
+      if (name == "bluetooth" || name == "wired") && !available.contains(name) { available.append(name) }
+    }
+    return [
+      "route": out.map { routeName($0.portType) } ?? "earpiece",
+      "available": available,
+      "via": "avaudiosession",
+      "bluetooth_name": btName as Any,
+    ]
+  }
+
+  /// Works with and without CallKit: the CallKit-activated session is the
+  /// same AVAudioSession, so the override goes to the live call.
+  static func setAudioRoute(_ route: String) {
+    let session = AVAudioSession.sharedInstance()
+    do {
+      if !session.categoryOptions.contains(.allowBluetooth) {
+        try? session.setCategory(.playAndRecord, mode: .voiceChat,
+                                 options: [.allowBluetooth, .allowBluetoothA2DP])
+      }
+      switch route {
+      case "speaker":
+        try session.overrideOutputAudioPort(.speaker)
+      case "bluetooth":
+        try session.overrideOutputAudioPort(.none)
+        if let bt = session.availableInputs?.first(where: { routeName($0.portType) == "bluetooth" }) {
+          try session.setPreferredInput(bt)
+        }
+      default:
+        try session.overrideOutputAudioPort(.none)
+        let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic })
+        if route == "wired" {
+          if let w = session.availableInputs?.first(where: { routeName($0.portType) == "wired" }) {
+            try session.setPreferredInput(w)
+          }
+        } else if let mic = builtIn {
+          try session.setPreferredInput(mic)
+        }
+      }
+    } catch {
+      NSLog("[AppWake] audio route \(route) failed: \(error)")
+    }
   }
 
   // MARK: Pushes

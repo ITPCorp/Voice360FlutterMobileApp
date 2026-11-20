@@ -183,6 +183,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
         // Ongoing-call notification (Android): open / mute / speaker / hangup.
         ActiveCallService.instance.onNativeAction((e['action'] ?? '').toString());
         break;
+      case 'audioRoute':
+        // iOS: the audio route changed (CallKit speaker button, headset).
+        unawaited(ActiveCallService.instance.refreshRoute());
+        break;
       case 'audio':
         _log('CallKit audio session ${e['active'] == '1' ? 'active' : 'inactive'}');
         break;
@@ -628,6 +632,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
       return null;
     });
   }
+
+  /// Native call-UI id (CallKit UUID / Telecom connection id) of the woken
+  /// call that [sipCallId] belongs to, null for other calls.
+  String? nativeUuidFor(String sipCallId) => _byInvite(sipCallId)?.uuid;
 
   /// True while [sipCallId] belongs to a woken call that was answered on the
   /// system UI (the Flutter call screen then opens as already accepted).

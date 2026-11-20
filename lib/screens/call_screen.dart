@@ -158,6 +158,52 @@ class CallScreen extends StatelessWidget {
     return 'CALL';
   }
 
+  static IconData _routeIcon(String r) => switch (r) {
+        'speaker' => Icons.volume_up_rounded,
+        'bluetooth' => Icons.bluetooth_audio_rounded,
+        'wired' => Icons.headset_rounded,
+        _ => Icons.volume_down_rounded,
+      };
+
+  String _routeLabel(String r) => switch (r) {
+        'speaker' => 'Speaker',
+        'bluetooth' => con.active.bluetoothName.value?.isNotEmpty == true
+            ? con.active.bluetoothName.value!
+            : 'Bluetooth',
+        'wired' => 'Headset',
+        _ => 'Phone',
+      };
+
+  /// Speaker button: a plain toggle with only earpiece + speaker; with a
+  /// headset connected, pick the output (Phone / Speaker / Bluetooth / Headset).
+  void _onAudioTap() {
+    final a = con.active;
+    if (!a.hasRouteChoice) {
+      a.toggleSpeaker();
+      return;
+    }
+    Get.bottomSheet(
+      SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final r in a.routes)
+              ListTile(
+                leading: Icon(_routeIcon(r)),
+                title: Text(_routeLabel(r)),
+                trailing: a.route.value == r ? const Icon(Icons.check_rounded) : null,
+                onTap: () {
+                  Get.back();
+                  a.setRoute(r);
+                },
+              ),
+          ],
+        ),
+      ),
+      backgroundColor: Theme.of(Get.context!).colorScheme.surface,
+    );
+  }
+
   Widget _incomingControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -199,12 +245,12 @@ class CallScreen extends StatelessWidget {
               onTap: () => con.showNumpad.value = !con.showNumpad.value,
             ),
             _ToggleButton(
-              icon: con.speakerOn.value
-                  ? Icons.volume_up_rounded
-                  : Icons.volume_down_rounded,
-              label: 'Speaker',
-              active: con.speakerOn.value,
-              onTap: con.toggleSpeaker,
+              icon: _routeIcon(con.active.route.value),
+              label: con.active.hasRouteChoice
+                  ? _routeLabel(con.active.route.value)
+                  : 'Speaker',
+              active: con.active.route.value == 'speaker',
+              onTap: _onAudioTap,
             ),
           ],
         ),

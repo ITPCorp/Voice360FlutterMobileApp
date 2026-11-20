@@ -113,6 +113,15 @@ object AppWake {
                         appContext?.let { CallOngoingService.startOrUpdate(it, args) }
                         result.success(null)
                     }
+                    "audioRoute" -> {
+                        val ctx = appContext
+                        result.success(if (ctx == null) null else AudioRoutes.state(ctx, call.argument<String>("uuid")))
+                    }
+                    "setAudioRoute" -> {
+                        // true = done through Telecom; false = no Telecom call, Dart uses WebRTC.
+                        result.success(AudioRoutes.setTelecomRoute(
+                            call.argument<String>("uuid"), call.argument<String>("route") ?: "earpiece"))
+                    }
                     "callEnded" -> {
                         appContext?.let { CallOngoingService.stop(it) }
                         result.success(null)

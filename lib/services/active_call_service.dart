@@ -7,6 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/routes.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/sip_settings.dart';
 import 'package:sip_ua/sip_ua.dart';
 
@@ -35,7 +36,14 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   final RxString peerName = ''.obs;
   final RxString peerNumber = ''.obs;
   final RxBool muted = false.obs;
+  /// True while the audio route is the loudspeaker (kept in sync with [route]).
   final RxBool speaker = false.obs;
+
+  /// Real current audio route: speaker | earpiece | bluetooth | wired.
+  final RxString route = 'earpiece'.obs;
+  final RxList<String> routes = <String>['earpiece', 'speaker'].obs;
+  final RxnString bluetoothName = RxnString();
+  Timer? _routePoll;
   final RxBool hold = false.obs;
   final RxString elapsed = ''.obs;
   final RxString currentRoute = ''.obs;
@@ -90,7 +98,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
         if (stream == null) return;
         if (s.originator == Originator.remote) {
           remoteStream = stream;
-          _applySpeaker();
+          unawaited(refreshRoute());
         } else {
           for (final t in stream.getAudioTracks()) {
             t.enabled = !muted.value;
@@ -121,6 +129,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
             connectedAt == null) {
           connectedAt = DateTime.now();
           _startTicker();
+          _startRoutePoll();
         }
         _pushNotification();
     }
@@ -155,6 +164,9 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     elapsed.value = '';
     _ticker?.cancel();
     _ticker = null;
+    _routePoll?.cancel();
+    _routePoll = null;
+    route.value = 'earpiece';
     try {
       localStream?.getTracks().forEach((t) => t.stop());
       localStream?.dispose();
@@ -213,25 +225,85 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   void toggleMute() => setMuted(!muted.value);
 
   void setSpeaker(bool on) {
-    speaker.value = on;
-    _applySpeaker();
-    _pushNotification();
+    if (on) {
+      unawaited(setRoute('speaker'));
+    } else {
+      // Off = back to the headset if there is one, else the earpiece.
+      unawaited(setRoute(routes.contains('bluetooth')
+          ? 'bluetooth'
+          : routes.contains('wired')
+              ? 'wired'
+              : 'earpiece'));
+    }
   }
 
-  void toggleSpeaker() => setSpeaker(!speaker.value);
+  void toggleSpeaker() => setSpeaker(route.value != 'speaker');
 
-  void _applySpeaker() {
-    if (kIsWeb) return;
+  /// More than earpiece + speaker available: the Speaker button opens a picker.
+  bool get hasRouteChoice => routes.contains('bluetooth') || routes.contains('wired');
+
+  /// Native id of the call's system UI (Telecom connection on Android).
+  String? get _nativeUuid {
+    final c = call.value;
+    return c?.id == null ? null : CallWakeService.instance.nativeUuidFor(c!.id!);
+  }
+
+  /// Switch the audio route. Android woken calls go through their Telecom
+  /// connection (Telecom owns the route there and reverts anything else);
+  /// other Android calls through WebRTC's device switch; iOS through
+  /// AVAudioSession (also works under CallKit).
+  Future<void> setRoute(String r) async {
+    if (call.value == null) return;
+    _log('route -> $r');
+    route.value = r; // optimistic; corrected by refreshRoute below
+    speaker.value = r == 'speaker';
     try {
-      final tracks = localStream?.getAudioTracks() ?? remoteStream?.getAudioTracks() ?? const [];
-      if (tracks.isNotEmpty) {
-        tracks.first.enableSpeakerphone(speaker.value);
-      } else {
-        Helper.setSpeakerphoneOn(speaker.value);
+      if (Platform.isIOS) {
+        await _channel.invokeMethod('setAudioRoute', {'route': r});
+      } else if (Platform.isAndroid) {
+        final viaTelecom = await _channel
+            .invokeMethod<bool>('setAudioRoute', {'uuid': _nativeUuid, 'route': r});
+        if (viaTelecom != true) {
+          await Helper.selectAudioOutput(_webrtcKind(r));
+        }
       }
     } catch (e) {
-      _log('speaker failed: $e');
+      _log('route $r failed: $e');
     }
+    _pushNotification();
+    Future.delayed(const Duration(milliseconds: 400), refreshRoute);
+    Future.delayed(const Duration(milliseconds: 1500), refreshRoute);
+  }
+
+  static String _webrtcKind(String r) => switch (r) {
+        'speaker' => 'speaker',
+        'bluetooth' => 'bluetooth',
+        'wired' => 'wired-headset',
+        _ => 'earpiece',
+      };
+
+  /// Read the route that is really in use (the system call UI, a headset
+  /// connecting or Telecom can change it without us).
+  Future<void> refreshRoute() async {
+    if (call.value == null || kIsWeb) return;
+    try {
+      final m = await _channel.invokeMethod<dynamic>('audioRoute', {'uuid': _nativeUuid});
+      if (m is! Map) return;
+      final r = (m['route'] ?? 'earpiece').toString();
+      final av = (m['available'] as List?)?.map((e) => e.toString()).toList();
+      final changed = r != route.value;
+      route.value = r;
+      speaker.value = r == 'speaker';
+      if (av != null && av.isNotEmpty) routes.assignAll(av);
+      bluetoothName.value = m['bluetooth_name']?.toString();
+      if (changed) _pushNotification();
+    } catch (_) {}
+  }
+
+  void _startRoutePoll() {
+    _routePoll?.cancel();
+    unawaited(refreshRoute());
+    _routePoll = Timer.periodic(const Duration(seconds: 2), (_) => refreshRoute());
   }
 
   void hangup() {
