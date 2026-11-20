@@ -275,7 +275,7 @@ object AppWake {
         )
         val args = hashMapOf<String, Any?>(
             "id" to uuidFor(callId),
-            "nameCaller" to name.ifEmpty { number.ifEmpty { "Unknown caller" } },
+            "nameCaller" to name.ifEmpty { number.ifEmpty { "Caller ID unavailable" } },
             "appName" to "VOICE360",
             "handle" to number,
             "type" to 0,

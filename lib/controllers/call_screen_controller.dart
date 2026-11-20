@@ -76,6 +76,7 @@ class CallScreenController extends GetxController implements SipUaHelperListener
           builder: () => MyAudioHandler(controller: this),
           config: const AudioServiceConfig(
             androidNotificationChannelId: 'com.ryanheise.myapp.channel.audio',
+            androidNotificationIcon: 'drawable/ic_stat_voice360',
             androidNotificationChannelName: 'Audio playback',
             androidNotificationOngoing: true,
           ),

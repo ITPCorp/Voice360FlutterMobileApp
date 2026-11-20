@@ -57,7 +57,7 @@ class PushService {
     if (_initialized) return;
     _initialized = true;
 
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidInit = AndroidInitializationSettings('ic_stat_voice360');
     const iosInit = DarwinInitializationSettings(
       requestAlertPermission: false,
       requestBadgePermission: false,
@@ -228,7 +228,8 @@ class PushService {
     }
 
     final n = message.notification;
-    final title = n?.title ?? message.data['title']?.toString() ?? 'New message';
+    final title =
+        n?.title ?? message.data['title']?.toString() ?? 'New message';
     final body = n?.body ?? message.data['body']?.toString() ?? '';
 
     await _localNotifs.show(
@@ -240,6 +241,7 @@ class PushService {
           _androidChannelId,
           _androidChannelName,
           channelDescription: _androidChannelDescription,
+          largeIcon: DrawableResourceAndroidBitmap('notification_voice360'),
           importance: Importance.high,
           priority: Priority.high,
         ),

@@ -23,3 +23,32 @@ plugins {
 }
 
 include ":app"
+
+// flutter_callkit_incoming 3.1.6 hardcodes the launcher icon in its builders.
+// Patch a private build copy so other apps using the shared pub cache are unaffected.
+def callkit = project(':flutter_callkit_incoming')
+def upstream = callkit.projectDir
+def local = new File(settingsDir, ".gradle/voice360-icons/${upstream.parentFile.name}")
+def managerPath = 'src/main/kotlin/com/hiennv/flutter_callkit_incoming/CallkitNotificationManager.kt'
+def manager = new File(upstream, managerPath).getText('UTF-8')
+['notificationBuilder', 'notificationMissingBuilder', 'notificationOngoingBuilder'].each { builder ->
+    def original = "${builder}?.setSmallIcon(smallIcon)"
+    if (!manager.contains(original)) {
+        throw new GradleException("Review the Voice360 icon override for ${builder} after the CallKit plugin update")
+    }
+    manager = manager.replace(original, """${builder}?.setSmallIcon(R.drawable.ic_stat_voice360)
+        ${builder}?.setLargeIcon(android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.notification_voice360))""")
+}
+def files = new groovy.ant.AntBuilder()
+files.copy(todir: local) {
+    fileset(dir: upstream, includes: 'build.gradle*,consumer-rules.pro,gradle.properties,src/**', excludes: managerPath)
+}
+files.copy(todir: new File(local, 'src/main/res')) {
+    fileset(dir: new File(settingsDir, 'app/src/main/res'), includes: '**/ic_stat_voice360.png,**/notification_voice360.png')
+}
+def patched = new File(local, managerPath)
+if (!patched.exists() || patched.getText('UTF-8') != manager) {
+    patched.parentFile.mkdirs()
+    patched.setText(manager, 'UTF-8')
+}
+callkit.projectDir = local

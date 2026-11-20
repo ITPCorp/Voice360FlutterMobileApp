@@ -113,7 +113,8 @@ class CallOngoingService : Service() {
 
             val hangup = action(CallActionReceiver.HANGUP, 4)
             val b = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(context.applicationInfo.icon)
+                .setSmallIcon(R.drawable.ic_stat_voice360)
+                .setLargeIcon(android.graphics.BitmapFactory.decodeResource(context.resources, R.drawable.notification_voice360))
                 .setContentTitle(if (name.isNotEmpty()) name else number)
                 .setContentText(
                     "$status${if (muted) " · muted" else ""}${if (speaker) " · speaker" else ""} · tap to return"
@@ -130,6 +131,7 @@ class CallOngoingService : Service() {
             if (callStyle) {
                 val person = androidx.core.app.Person.Builder()
                     .setName(if (name.isNotEmpty()) name else number.ifEmpty { "Call" })
+                    .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(context, R.drawable.notification_voice360))
                     .setImportant(true)
                     .build()
                 b.setStyle(NotificationCompat.CallStyle.forOngoingCall(person, hangup))

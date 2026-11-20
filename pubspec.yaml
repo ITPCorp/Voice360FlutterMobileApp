@@ -106,7 +106,7 @@ flutter_launcher_icons:
   # replacing this file to regenerate all platform-specific sizes.
   image_path: "assets/launcher/icon.png"
   adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/launcher/icon.png"
+  adaptive_icon_foreground: "assets/launcher/adaptive-foreground.png"
   min_sdk_android: 21
   remove_alpha_ios: true
 

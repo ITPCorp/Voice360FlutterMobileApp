@@ -126,6 +126,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     } else {
       config = CXProviderConfiguration(localizedName: "VOICE360")
     }
+    config.iconTemplateImageData = UIImage(named: "CallKitIcon")?.pngData()
     config.supportsVideo = false
     config.maximumCallGroups = 1
     config.maximumCallsPerCallGroup = 1
@@ -318,7 +319,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
       let name = data["caller_id_name"] ?? ""
       let update = CXCallUpdate()
       update.remoteHandle = CXHandle(type: number.isEmpty ? .generic : .phoneNumber,
-                                     value: number.isEmpty ? "Unknown" : number)
+                                     value: number.isEmpty ? "Caller ID unavailable" : number)
       update.localizedCallerName = name.isEmpty ? nil : name
       update.hasVideo = false
       update.supportsDTMF = true

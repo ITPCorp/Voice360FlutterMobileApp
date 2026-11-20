@@ -44,9 +44,9 @@
 	<key>NSContactsUsageDescription</key>
 	<string>$(PRODUCT_NAME) needs access to your contacts to share contact information.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>$(PRODUCT_NAME) needs access to the microphone to record audio.</string>
+	<string>Use your microphone so the other person can hear you on calls.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>$(PRODUCT_NAME) needs access to your photo library to save and share photos.</string>
+	<string>Choose a photo to attach to a Voice360 message.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
