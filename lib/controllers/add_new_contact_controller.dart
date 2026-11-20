@@ -2,6 +2,7 @@ import 'package:email_validator/email_validator.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/contacts_controller.dart';
+import 'package:itp_voice/helpers/contact_phone.dart';
 import 'package:itp_voice/models/add_contact_request_model/add_contact_request_model.dart';
 import 'package:itp_voice/models/add_contact_request_model/email.dart';
 import 'package:itp_voice/models/add_contact_request_model/number.dart';
@@ -93,10 +94,7 @@ class AddNewContactController extends GetxController {
       for (var i = 0; i < contactFieldsData.length; i++) {
         Number number = Number(
           label: contactsLabels[contactFieldsData[i]['selectedLabel']],
-          number: contactFieldsData[i]['controller']
-              .text
-              .toString()
-              .replaceAll(RegExp(r'[\s().-]'), ''),
+          number: newContactPhone(contactFieldsData[i]['controller'].text),
         );
         numbers.add(number);
       }
@@ -151,10 +149,7 @@ class AddNewContactController extends GetxController {
           return false;
         }
         var isPhoneValid = await contactsRepo.validatePhoneNumber(
-            contactFieldsData[i]['controller']
-                .text
-                .toString()
-                .replaceAll(RegExp(r'[\s().-]'), ''));
+            newContactPhone(contactFieldsData[i]['controller'].text));
 
         if (isPhoneValid.runtimeType == String) {
           CustomLoader.dismisLoader();

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/helpers/contact_phone.dart';
 
 import '../cache/cache_service.dart';
 import '../models/get_contacts_reponse_model/contact_response.dart';
@@ -60,7 +61,7 @@ class ChatInfoController extends GetxController {
     isLoading.value = true;
     try {
       final saved = create
-          ? await repo.createContact(name, 'work', phone, '')
+          ? await repo.createContact(name, 'work', newContactPhone(phone), '')
           : await repo.updateContact(pk, name, 'work', phone, '');
       if (saved != true) {
         CustomToast.showToast('Could not save this contact. Try again.', true);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/add_new_contact_controller.dart';
 import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/helpers/contact_phone.dart';
 
 class AddNewContactScreen extends StatefulWidget {
   const AddNewContactScreen({super.key});
@@ -24,7 +25,7 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
       // Pre-fill phone number from "Save as contact" dialer action
       if (con.contactFieldsData.isNotEmpty) {
         (con.contactFieldsData[0]['controller'] as TextEditingController)
-            .text = args;
+            .text = displayNewContactPhone(args);
       }
     }
   }
@@ -123,12 +124,20 @@ class _AddNewContactScreenState extends State<AddNewContactScreen> {
                     ),
                     const SizedBox(width: V360Spacing.s2),
                     Expanded(
-                      child: TextField(
-                        controller: phoneCtrl,
-                        keyboardType: TextInputType.phone,
-                        decoration: const InputDecoration(
-                          hintText: '+1 202 555 0148',
-                          prefixIcon: Icon(Icons.phone_outlined, size: 20),
+                      child: Focus(
+                        onFocusChange: (focused) {
+                          if (!focused && phoneCtrl != null) {
+                            final formatted = displayNewContactPhone(phoneCtrl.text);
+                            if (formatted != phoneCtrl.text) phoneCtrl.text = formatted;
+                          }
+                        },
+                        child: TextField(
+                          controller: phoneCtrl,
+                          keyboardType: TextInputType.phone,
+                          decoration: const InputDecoration(
+                            hintText: '+1 (202) 555-0148',
+                            prefixIcon: Icon(Icons.phone_outlined, size: 20),
+                          ),
                         ),
                       ),
                     ),
