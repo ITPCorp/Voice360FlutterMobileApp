@@ -1,4 +1,5 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,22 +15,26 @@ class FullScreenCalls {
   bool _consideringSheet = false;
 
   Future<void> check({bool Function()? mayPrompt}) async {
-    if (!Platform.isAndroid) return;
-    final previous = allowed.value;
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    bool? current;
     try {
-      allowed.value = await _channel.invokeMethod<bool>('fsiAllowed');
+      current = await _channel.invokeMethod<bool>('fsiAllowed');
     } on PlatformException {
-      allowed.value = null;
+      current = null;
     } on MissingPluginException {
-      allowed.value = null;
+      current = null;
     }
-    if (previous == false && allowed.value == true) {
+    final previous = allowed.value;
+    allowed.value = current;
+    if (previous == false && current == true) {
       _feedback('Full-screen incoming calls are on.');
     }
     if (allowed.value != false ||
         mayPrompt == null ||
         !mayPrompt() ||
-        _consideringSheet) return;
+        _consideringSheet) {
+      return;
+    }
     _consideringSheet = true;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -37,13 +42,17 @@ class FullScreenCalls {
       final last = prefs.getInt(_shownAt);
       if (last != null &&
           now >= last &&
-          now - last < Duration.millisecondsPerDay) return;
+          now - last < Duration.millisecondsPerDay) {
+        return;
+      }
       final context = Get.overlayContext;
       if (context == null ||
           !context.mounted ||
           !mayPrompt() ||
-          allowed.value != false) return;
-      final sheet = showModalBottomSheet<bool>(
+          allowed.value != false) {
+        return;
+      }
+      final sheet = showModalBottomSheet<void>(
         context: context,
         useSafeArea: true,
         isScrollControlled: true,
@@ -61,10 +70,13 @@ class FullScreenCalls {
                     'Allow full-screen incoming calls so Voice360 can ring when your phone is locked.'),
                 const SizedBox(height: 24),
                 FilledButton(
-                    onPressed: () => Navigator.pop(context, true),
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      await openSettings();
+                    },
                     child: const Text('Open settings')),
                 TextButton(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () => Navigator.pop(context),
                     child: const Text('Not now')),
               ],
             ),
@@ -72,7 +84,7 @@ class FullScreenCalls {
         ),
       );
       await prefs.setInt(_shownAt, now);
-      if (await sheet == true) await openSettings();
+      await sheet;
     } finally {
       _consideringSheet = false;
     }

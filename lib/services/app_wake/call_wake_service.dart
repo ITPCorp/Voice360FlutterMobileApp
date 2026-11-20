@@ -840,9 +840,16 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
       return [jsonEncode({'fsi_allowed': FullScreenCalls.instance.allowed.value ?? 'unknown'})];
     }
     return rows.map((line) {
-      final data = jsonDecode(line) as Map<String, dynamic>;
-      data.putIfAbsent('fsi_allowed', () => 'unknown');
-      return jsonEncode(data);
+      try {
+        final data = jsonDecode(line);
+        if (data is Map<String, dynamic>) {
+          data.putIfAbsent('fsi_allowed', () => 'unknown');
+          return jsonEncode(data);
+        }
+      } on FormatException {
+        // Older diagnostics can contain plain text.
+      }
+      return line;
     }).toList();
   }
 
