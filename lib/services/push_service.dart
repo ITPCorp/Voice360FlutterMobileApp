@@ -283,7 +283,9 @@ class PushService {
     // The Android service builds a single MessagingStyle card for this CRM
     // envelope in every app state, including while another chat is open.
     if (Platform.isAndroid && n != null && threadId != null &&
-        message.data['service_name'] == 'itp_voice') return;
+        message.data['service_name'] == 'itp_voice') {
+      return;
+    }
     if (threadId != null) {
       final peer = destination?.peer ?? RegExp(r'^New Message from ([+()0-9 .-]+)$',
           caseSensitive: false).firstMatch(n?.body ?? '')?.group(1);
