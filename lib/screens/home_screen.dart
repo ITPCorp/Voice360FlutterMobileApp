@@ -47,6 +47,18 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  /// Long-press 0: the 0 entered on touch becomes "+".
+  void _zeroToPlus() {
+    final pos = _number.selection.baseOffset;
+    final text = _number.text;
+    final at = (pos < 0 || pos > text.length) ? text.length : pos;
+    if (at == 0 || text[at - 1] != '0') return;
+    _number.value = TextEditingValue(
+      text: text.replaceRange(at - 1, at, '+'),
+      selection: TextSelection.collapsed(offset: at),
+    );
+  }
+
   void _backspace() {
     HapticFeedback.selectionClick();
     final pos = _number.selection.baseOffset;
@@ -96,6 +108,11 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       body: TabBarView(
         controller: _tabs,
+        // No swipe between Keypad and Recent: while a finger is down, a
+        // swipeable pager ignores every other touch, so fast dialing (next key
+        // pressed before the last finger lifts) dropped digits. Tabs still
+        // switch by tapping Keypad / Recent.
+        physics: const NeverScrollableScrollPhysics(),
         children: [
           _buildKeypad(context),
           const CallHistoryScreen(),
@@ -153,10 +170,10 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           const SizedBox(height: V360Spacing.s2),
           const Spacer(),
-          V360Dialpad(onKey: (d) {
-            HapticFeedback.lightImpact();
-            _press(d);
-          }),
+          V360Dialpad(
+            onKey: _press, // the dialpad already does the haptic
+            onPlus: _zeroToPlus,
+          ),
           const SizedBox(height: V360Spacing.s5),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: V360Spacing.s6),

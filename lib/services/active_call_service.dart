@@ -264,7 +264,14 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
         final viaTelecom = await _channel
             .invokeMethod<bool>('setAudioRoute', {'uuid': _nativeUuid, 'route': r});
         if (viaTelecom != true) {
-          await Helper.selectAudioOutput(_webrtcKind(r));
+          // No Telecom call (outbound, in-app incoming): the WebRTC switch that
+          // already works for outbound calls. Explicit device pick only for a
+          // headset.
+          if (r == 'speaker' || (r == 'earpiece' && !hasRouteChoice)) {
+            await Helper.setSpeakerphoneOn(r == 'speaker');
+          } else {
+            await Helper.selectAudioOutput(_webrtcKind(r));
+          }
         }
       }
     } catch (e) {
