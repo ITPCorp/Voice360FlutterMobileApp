@@ -37,7 +37,7 @@ class V360ListTile extends StatelessWidget {
     final tt = Theme.of(context).textTheme;
 
     return Material(
-      color: Colors.transparent,
+      type: MaterialType.transparency,
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,

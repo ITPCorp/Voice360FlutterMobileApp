@@ -387,12 +387,10 @@ class _MessageBubble extends StatelessWidget {
             ),
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.78,
+              maxWidth: MediaQuery.sizeOf(context).width * 0.78,
             ),
-            child: Material(
-              color: bg,
-              borderRadius: radius,
-              clipBehavior: Clip.antiAlias,
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: bg, borderRadius: radius),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: V360Spacing.s4,

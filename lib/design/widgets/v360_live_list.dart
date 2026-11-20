@@ -11,12 +11,14 @@ class V360LiveList extends StatefulWidget {
     this.reverse = false,
     this.padding = EdgeInsets.zero,
     this.versionAt,
+    this.cacheExtent,
   });
 
   final List<Object> ids;
   final IndexedWidgetBuilder itemBuilder;
   final ScrollController? controller;
   final bool reverse;
+  final double? cacheExtent;
   final EdgeInsets padding;
   final Object? Function(int index)? versionAt;
 
@@ -63,7 +65,7 @@ class _V360LiveListState extends State<V360LiveList> {
     super.dispose();
   }
 
-  Widget _section(bool leading) {
+  Widget _section(bool leading, Duration duration) {
     return SliverList(
       key: leading ? null : _center,
       delegate: SliverChildBuilderDelegate(
@@ -71,9 +73,6 @@ class _V360LiveListState extends State<V360LiveList> {
           final index = leading ? _pivot - i - 1 : _pivot + i;
           final id = widget.ids[index];
           Widget row = widget.itemBuilder(context, index);
-          final duration = MediaQuery.disableAnimationsOf(context)
-              ? Duration.zero
-              : const Duration(milliseconds: 160);
           if (widget.versionAt != null) {
             row = AnimatedSwitcher(
                 duration: duration,
@@ -103,15 +102,21 @@ class _V360LiveListState extends State<V360LiveList> {
   }
 
   @override
-  Widget build(BuildContext context) => CustomScrollView(
-        controller: _scroll,
-        center: _center,
-        reverse: widget.reverse,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          _section(true),
-          _section(false),
-          SliverToBoxAdapter(child: SizedBox(height: widget.padding.bottom)),
-        ],
-      );
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 160);
+    return CustomScrollView(
+      cacheExtent: widget.cacheExtent,
+      controller: _scroll,
+      center: _center,
+      reverse: widget.reverse,
+      physics: const AlwaysScrollableScrollPhysics(),
+      slivers: [
+        if (_pivot > 0) _section(true, duration),
+        _section(false, duration),
+        SliverToBoxAdapter(child: SizedBox(height: widget.padding.bottom)),
+      ],
+    );
+  }
 }

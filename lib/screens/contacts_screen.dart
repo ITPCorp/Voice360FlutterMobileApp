@@ -182,19 +182,21 @@ class _ContactsScreenState extends State<ContactsScreen> {
 
     final isSearching = con.searchController.text.trim().isNotEmpty;
 
-    final sorted = [...data]..sort((a, b) {
-        final an =
-            ('${a.firstname ?? ''} ${a.lastname ?? ''}').trim().toLowerCase();
-        final bn =
-            ('${b.firstname ?? ''} ${b.lastname ?? ''}').trim().toLowerCase();
-        return an.compareTo(bn);
-      });
+    final names = {
+      for (final c in data)
+        c: ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim()
+    };
+    final sortNames = {
+      for (final entry in names.entries) entry.key: entry.value.toLowerCase()
+    };
+    final sorted = [...data]
+      ..sort((a, b) => sortNames[a]!.compareTo(sortNames[b]!));
 
     final rows = <Object>[];
     final ids = <Object>[];
     String? lastLetter;
     for (final c in sorted) {
-      final name = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
+      final name = names[c]!;
       final letter = name.isEmpty ? '#' : name[0].toUpperCase();
       if (!isSearching && letter != lastLetter) {
         rows.add(letter);
@@ -207,14 +209,14 @@ class _ContactsScreenState extends State<ContactsScreen> {
     final list = V360LiveList(
       key: ValueKey(con.searchController.text.trim()),
       controller: _scroll,
+      cacheExtent: MediaQuery.sizeOf(context).height,
       ids: ids,
       padding: const EdgeInsets.only(bottom: V360Spacing.s10),
       itemBuilder: (_, i) {
         final item = rows[i];
         if (item is String) return V360SectionHeader(title: item);
         final c = item as Contact;
-        return _contactRow(
-            c, ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim());
+        return _contactRow(c, names[c]!);
       },
     );
     return isSearching
