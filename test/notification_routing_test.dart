@@ -10,6 +10,8 @@ import 'package:itp_voice/services/push_service.dart';
 
 class _Home extends BaseScreenController {
   @override
+  // Keep SIP, network and device plugins out of this navigation test.
+  // ignore: must_call_super
   void onInit() {}
   @override
   void onReady() {}
@@ -17,6 +19,8 @@ class _Home extends BaseScreenController {
 
 class _Mailbox extends VoiceMailsController {
   @override
+  // Keep SIP, network and device plugins out of this navigation test.
+  // ignore: must_call_super
   void onInit() {}
   @override
   void onReady() {}
@@ -30,7 +34,7 @@ void main() {
             "{'message_thread_id': 73, 'to_phone_number': '+12025550111', 'note': \"O'Brien\"}"
       },
       {'metadata': '{"conversation_id":"73","to_number":"+12025550111"}'},
-      {'message_thread_pk': 73, 'to_phone_number': '+12025550111'},
+      {'message_thread_pk': 73, 'msg_id': 5, 'to_phone_number': '+12025550111'},
     ]) {
       final target = NotificationDestination.parse(data)!;
       expect(target.id, '73');
@@ -54,7 +58,7 @@ void main() {
     final home = Get.put<BaseScreenController>(_Home());
     final mailbox = Get.put<VoiceMailsController>(_Mailbox());
     mailbox.voiceMails = [
-      VoiceMails(msgId: 'first', pk: 1),
+      VoiceMails(msgId: '2', pk: 1),
       VoiceMails(msgId: 'second', pk: 2)
     ];
     push.handleTap({'conversation_id': '40', 'to_number': '111'});

@@ -4,13 +4,19 @@ enum NotificationScreen { thread, messages, voicemail, recent }
 
 class NotificationDestination {
   const NotificationDestination(this.screen,
-      {this.id, this.number, this.peer, this.caller, this.time});
+      {this.id,
+      this.number,
+      this.peer,
+      this.caller,
+      this.time,
+      this.recordPk = false});
   final NotificationScreen screen;
   final String? id;
   final String? number;
   final String? peer;
   final String? caller;
   final int? time;
+  final bool recordPk;
 
   static NotificationDestination? parse(Map<Object?, Object?> data) {
     final metadata = data['metadata'];
@@ -37,7 +43,9 @@ class NotificationDestination {
         if (value != null &&
             value.isNotEmpty &&
             value != 'null' &&
-            value != 'None') return value;
+            value != 'None') {
+          return value;
+        }
       }
       return null;
     }
@@ -51,15 +59,20 @@ class NotificationDestination {
           number: field(['from_number']),
           time: int.tryParse(field(['posted_at']) ?? ''));
     }
-    final vm = field([
-      'voicemail_msg_id',
+    final record = field([
       'voicemail_message_id',
       'voice_message_id',
+      'voicemail_message_pk',
       'voicemail_id'
     ]);
-    if (vm != null || type == 'voicemail' || type == 'new_voicemail') {
+    final explicitId = field(['voicemail_msg_id']);
+    final isVoicemail = type == 'voicemail' ||
+        type == 'new_voicemail' ||
+        type == 'voicemail.received';
+    if (isVoicemail || explicitId != null || record != null) {
+      final messageId = explicitId ?? field(['msg_id']);
       return NotificationDestination(NotificationScreen.voicemail,
-          id: vm ?? field(['msg_id']));
+          id: messageId ?? record, recordPk: messageId == null);
     }
     final thread = field([
       'message_thread_id',
@@ -73,8 +86,9 @@ class NotificationDestination {
           number: field(['to_phone_number', 'to_number']),
           peer: field(['from_number']));
     }
-    if (type == 'sms' || type == 'message' || type == 'mms')
+    if (type == 'sms' || type == 'message' || type == 'mms') {
       return const NotificationDestination(NotificationScreen.messages);
+    }
     return null;
   }
 }

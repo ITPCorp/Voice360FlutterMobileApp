@@ -11,8 +11,8 @@ import 'package:flutter/widgets.dart';
 import 'package:itp_voice/controllers/chat_controller.dart';
 import 'package:itp_voice/controllers/voicemails_controller.dart';
 import 'package:itp_voice/services/notification_destination.dart';
+import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
-import 'package:itp_voice/main.dart' show firebaseReady;
 import 'package:itp_voice/repo/auth_repo.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:itp_voice/services/app_wake/call_wake_service.dart';
@@ -49,6 +49,19 @@ class PushService {
   StreamSubscription<RemoteMessage>? _onMessageSub;
   StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
   StreamSubscription<String>? _onTokenRefreshSub;
+  StreamSubscription<GlobalSocketEvent>? _mailboxSub;
+
+  void watchMailbox(Stream<GlobalSocketEvent> events) {
+    _mailboxSub ??= events
+        .where((e) => e.innerType == 'voicemail.received')
+        .listen((event) {
+      final payload = {...event.data, 'type': 'voicemail'};
+      final target = NotificationDestination.parse(payload);
+      if (target?.id == null) return;
+      _showBanner('New voicemail', 'Tap to open the recording.', payload,
+          Object.hash('voicemail', target!.id) & 0x7fffffff);
+    });
+  }
 
   /// Notification tap that arrived before the user reached BaseScreen
   /// (cold launch sits on LoginScreen for ~3s of auto-login). ChatScreen
@@ -214,6 +227,8 @@ class PushService {
   /// Drop local state and ask FCM to delete the token so a stale device
   /// doesn't keep receiving pushes after logout.
   Future<void> onLogout() async {
+    await _mailboxSub?.cancel();
+    _mailboxSub = null;
     _cachedToken = null;
     _pending = null;
     _homeReady = false;
@@ -224,6 +239,7 @@ class PushService {
   }
 
   Future<void> dispose() async {
+    await _mailboxSub?.cancel();
     await _onMessageSub?.cancel();
     await _onMessageOpenedAppSub?.cancel();
     await _onTokenRefreshSub?.cancel();
@@ -253,8 +269,16 @@ class PushService {
         n?.title ?? message.data['title']?.toString() ?? 'New message';
     final body = n?.body ?? message.data['body']?.toString() ?? '';
 
+    final id = destination?.screen == NotificationScreen.voicemail
+        ? Object.hash('voicemail', destination?.id) & 0x7fffffff
+        : message.hashCode;
+    await _showBanner(title, body, message.data, id);
+  }
+
+  Future<void> _showBanner(
+      String title, String body, Map<String, dynamic> data, int id) async {
     await _localNotifs.show(
-      message.hashCode,
+      id,
       title,
       body,
       const NotificationDetails(
@@ -268,7 +292,7 @@ class PushService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
-      payload: jsonEncode(message.data),
+      payload: jsonEncode(data),
     );
   }
 
@@ -320,7 +344,9 @@ class PushService {
     final base = Get.find<BaseScreenController>();
     if (target.screen == NotificationScreen.thread &&
         Get.currentRoute == Routes.CHAT_SCREEN_ROUTE &&
-        ChatController.visibleThreadId == target.id) return;
+        ChatController.visibleThreadId == target.id) {
+      return;
+    }
     Get.until((r) => r.settings.name == Routes.BASE_SCREEN_ROUTE || r.isFirst);
     switch (target.screen) {
       case NotificationScreen.recent:
@@ -341,12 +367,17 @@ class PushService {
         await WidgetsBinding.instance.endOfFrame;
         if (generation != _generation ||
             base.currentTab.value != 3 ||
-            Get.currentRoute != Routes.BASE_SCREEN_ROUTE) return;
+            Get.currentRoute != Routes.BASE_SCREEN_ROUTE) {
+          return;
+        }
         final mailbox = Get.find<VoiceMailsController>();
-        final match = await mailbox.findNotificationMessage(target.id!);
+        final match = await mailbox.findNotificationMessage(target.id!,
+            recordPk: target.recordPk);
         if (generation != _generation ||
             base.currentTab.value != 3 ||
-            Get.currentRoute != Routes.BASE_SCREEN_ROUTE) return;
+            Get.currentRoute != Routes.BASE_SCREEN_ROUTE) {
+          return;
+        }
         if (match == null) {
           Get.snackbar(
               'Voicemail',

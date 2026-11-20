@@ -36,6 +36,9 @@ class ChatController extends GetxController {
   static ChatController? visible;
   static String? get visibleThreadId => visible?.threadId.value;
   RxBool isLoading = false.obs;
+  final refreshing = false.obs;
+  final loadFailed = false.obs;
+  String? _hydratedThread;
   RxBool isMessageLoading = false.obs;
   MessagesRepo repo = MessagesRepo();
 
@@ -102,6 +105,7 @@ class ChatController extends GetxController {
   @override
   void onClose() {
     _socketSub?.cancel();
+    messageController.dispose();
     super.onClose();
   }
 
@@ -121,6 +125,8 @@ class ChatController extends GetxController {
     final tid = threadId.value;
     if (tid == null) return;
     if (!AppCache.instance.isReady) return;
+    if (_hydratedThread == tid) return;
+    _hydratedThread = tid;
     final cached = AppCache.instance.messages.read(tid);
     if (cached == null) return;
     _mergeFreshResponse(cached);
@@ -171,6 +177,21 @@ class ChatController extends GetxController {
                 n.replaceAll(RegExp(r'\D'), '') ==
                 secondArg.replaceAll(RegExp(r'\D'), '')))) {
       myNumber = secondArg;
+    } else if (threadId.value != null) {
+      // Older push payloads omit the receiving line. Only bind a sender that
+      // owns this exact conversation.
+      if (myNumbers.length == 1) {
+        myNumber = myNumbers.single;
+      } else if (AppCache.instance.isReady) {
+        for (final line in myNumbers) {
+          if (AppCache.instance.threads
+              .read(line)
+              .any((t) => t.pk?.toString() == threadId.value)) {
+            myNumber = line;
+            break;
+          }
+        }
+      }
     } else {
       // Compose entry: `secondArg` is the peer; assume the first chat number
       // is the sender. Settings lets users change it later.
@@ -313,9 +334,10 @@ class ChatController extends GetxController {
   }
 
   void _loadThreadMode() {
+    if (isClosed) return;
     fetchChat();
     final tid = threadId.value;
-    if (tid != null) {
+    if (tid != null && myNumber.isNotEmpty) {
       repo.markAsRead(tid, myNumber);
     }
     _subscribeToGlobalSocket();
@@ -437,24 +459,32 @@ class ChatController extends GetxController {
     final tid = threadId.value;
     if (tid == null) return;
 
-    // Hydrate from disk first — renders the conversation instantly while we
-    // refresh in the background. Important: we hydrate even when we already
-    // have a stub from _seedFromThread (participants but no messages),
-    // because the stub doesn't include the actual message history. The
-    // disk cache does — its messages get merged on top of the seed.
-    final hasMessages =
-        (_messages.value?.result?.messages?.isNotEmpty ?? false);
-    if (!hasMessages && AppCache.instance.isReady) {
-      final cached = AppCache.instance.messages.read(tid);
-      if (cached != null) {
-        _mergeFreshResponse(cached);
-      }
-    }
-
-    // Show full-screen spinner only when there's truly nothing to render
-    // (no seeded participants AND no cached messages).
+    _hydrateMessagesFromDisk();
     isLoading.value = (_messages.value?.result?.messages?.isEmpty ?? true);
-    final res = await repo.getThreadMessages(tid, myNumber);
+    refreshing.value = !isLoading.value;
+    Object? res;
+    if (myNumber.isEmpty) {
+      final numbers = locator<NumbersService>();
+      if (numbers.chatNumbers.isEmpty) await numbers.getUpdatedNumbersList();
+      for (final line in numbers.chatNumbers) {
+        if (isClosed || tid != threadId.value) return;
+        final result = await repo.getThreadMessages(tid, line);
+        if (isClosed || tid != threadId.value) return;
+        if (result is GetThreadMessagesResponseModel &&
+            (result.result?.participants?.any((p) => p.number == line) ??
+                false)) {
+          myNumber = line;
+          res = result;
+          repo.markAsRead(tid, line);
+          break;
+        }
+      }
+    } else {
+      res = await repo.getThreadMessages(tid, myNumber);
+    }
+    if (isClosed || tid != threadId.value) return;
+    refreshing.value = false;
+    loadFailed.value = res is! GetThreadMessagesResponseModel;
     if (res is GetThreadMessagesResponseModel) {
       _mergeFreshResponse(res);
       if (AppCache.instance.isReady) {

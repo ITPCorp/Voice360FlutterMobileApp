@@ -44,7 +44,17 @@ class VoiceMailsController extends GetxController {
     update();
   }
 
-  fetchVoiceMails() async {
+  Future<void>? _pending;
+  bool get refreshing => _pending != null;
+
+  Future<void> fetchVoiceMails() {
+    return _pending ??= _fetch().whenComplete(() {
+      _pending = null;
+      update();
+    });
+  }
+
+  Future<void> _fetch() async {
     _hydrateFromCache();
     // Show loading state only when we have nothing on screen.
     isVoiceMailsLoading = voiceMails.isEmpty;
@@ -63,9 +73,10 @@ class VoiceMailsController extends GetxController {
     update();
   }
 
-  Future<VoiceMails?> findNotificationMessage(String id) async {
-    VoiceMails? find() => voiceMails
-        .firstWhereOrNull((v) => v.msgId == id || v.pk?.toString() == id);
+  Future<VoiceMails?> findNotificationMessage(String id,
+      {required bool recordPk}) async {
+    VoiceMails? find() => voiceMails.firstWhereOrNull(
+        (v) => recordPk ? v.pk?.toString() == id : v.msgId == id);
     final cached = find();
     if (cached != null) return cached;
     await fetchVoiceMails();

@@ -41,7 +41,9 @@ class BaseScreenController extends GetxController
     // Bring up the platform-wide notification socket (SMS, call events, etc.)
     // once the user is logged in and the base screen mounts. Fire-and-forget;
     // failures are handled with auto-reconnect inside the service.
-    locator<GlobalSocketService>().connect();
+    final socket = locator<GlobalSocketService>();
+    locator<PushService>().watchMailbox(socket.events);
+    socket.connect();
     super.onInit();
   }
 
