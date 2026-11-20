@@ -147,22 +147,27 @@ class _VoiceMailDetailsScreenState extends State<VoiceMailDetailsScreen> {
     );
   }
 
-  void _confirmDelete() {
-    showDialog(
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialog) => AlertDialog(
         title: const Text('Delete voicemail?'),
         content: const Text('This cannot be undone.'),
         actions: [
-          TextButton(onPressed: Get.back, child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: V360Colors.danger500),
-            onPressed: () => con.deleteVoiceMail(vm.msgId),
+            onPressed: () => Navigator.pop(dialog, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+    final deleted = await con.deleteVoiceMail(vm.msgId);
+    if (deleted && mounted && ModalRoute.of(context)?.isCurrent == true) {
+      Navigator.pop(context);
+    }
   }
 
   String _formatTime(int? epoch) {

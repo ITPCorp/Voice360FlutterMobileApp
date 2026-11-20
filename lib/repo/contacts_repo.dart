@@ -111,7 +111,7 @@ class ContactsRepo {
         protected: true,
       );
 
-      if (apiResponse['error']==null) {
+      if (apiResponse is Map && apiResponse.containsKey('error') && apiResponse['error'] == null) {
         return true;
       }
       return apiResponse['message'];

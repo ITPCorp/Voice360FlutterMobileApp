@@ -356,7 +356,10 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
                     'Delete contact',
                     style: TextStyle(color: V360Colors.danger500),
                   ),
-                  onTap: () => _confirmDelete(context, c),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _confirmDelete(c);
+                  },
                 ),
               ],
             ),
@@ -366,31 +369,31 @@ class _ContactDetailsScreenState extends State<ContactDetailsScreen> {
     );
   }
 
-  void _confirmDelete(BuildContext context, Contact c) {
-    Get.back();
-    showDialog(
+  Future<void> _confirmDelete(Contact c) async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialog) => AlertDialog(
         title: const Text('Delete contact?'),
         content: const Text('This will remove the contact from your account.'),
         actions: [
           TextButton(
-            onPressed: () => Get.back(),
+            onPressed: () => Navigator.pop(dialog, false),
             child: const Text('Cancel'),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
               backgroundColor: V360Colors.danger500,
             ),
-            onPressed: () {
-              Get.back();
-              con.deleteContact(c.pk);
-              Get.back();
-            },
+            onPressed: () => Navigator.pop(dialog, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
+    if (confirmed != true || !mounted) return;
+    final deleted = await con.deleteContact(c.pk);
+    if (deleted && mounted && ModalRoute.of(context)?.isCurrent == true) {
+      Navigator.pop(context);
+    }
   }
 }

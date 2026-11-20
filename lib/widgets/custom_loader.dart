@@ -9,20 +9,23 @@ import 'package:itp_voice/design/v360.dart';
 ///
 /// Drop-in replacement for the legacy implementation — same static API.
 class CustomLoader {
-  static bool _open = false;
+  static Object? _dialog;
 
   static void showLoader({String? message}) {
-    if (_open) return;
-    _open = true;
+    if (_dialog != null) return;
+    final token = _dialog = Object();
     Get.dialog(
       _V360Loader(message: message),
       barrierDismissible: false,
       barrierColor: Colors.black.withOpacity(0.35),
-    ).whenComplete(() => _open = false);
+    ).whenComplete(() {
+      if (identical(_dialog, token)) _dialog = null;
+    });
   }
 
   static void dismisLoader() {
-    if (!_open) return;
+    if (_dialog == null) return;
+    _dialog = null;
     if (Get.isDialogOpen ?? false) {
       Get.back();
     }

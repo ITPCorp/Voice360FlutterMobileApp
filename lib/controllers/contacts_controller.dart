@@ -181,17 +181,16 @@ class ContactsController extends GetxController {
     update();
   }
 
-  Future<void> deleteContact(int? id) async {
-    if (id == null) return;
-    Get.back();
+  Future<bool> deleteContact(int? id) async {
+    if (id == null) return false;
     CustomLoader.showLoader();
     final res = await repo.deleteContact(id);
-    Get.back();
+    CustomLoader.dismisLoader();
 
-    if (res is String) {
-      CustomToast.showToast(res, true);
+    if (res != true) {
+      CustomToast.showToast('Could not delete this contact. Try again.', true);
+      return false;
     } else {
-      Get.back();
       _allContacts.removeWhere((c) => c.pk == id);
       _searchResults =
           _searchResults.where((c) => c.pk != id).toList(growable: false);
@@ -199,6 +198,7 @@ class ContactsController extends GetxController {
         AppCache.instance.contacts.remove(id);
       }
       update();
+      return true;
     }
   }
 

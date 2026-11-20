@@ -120,32 +120,23 @@ class AddNewContactController extends GetxController {
             numbers[0].label ?? '',
             numbers[0].number ?? '',
             emails[0].email ?? '');
+        CustomLoader.dismisLoader();
+        if (res != true) {
+          CustomToast.showToast('Could not save this contact. Check the details and try again.', true);
+          return;
+        }
         Get.back();
-        if (res.runtimeType == String) {
-          CustomToast.showToast(res, true);
-          return;
-        }
-        if (res.runtimeType == null) {
-          CustomToast.showToast("Something went wrong", true);
-          return;
-        }
-        if (res) {
-          Get.back();
-          CustomToast.showToast("New contact created successfully", false);
-          contactsController.fetchContacts(
-            '0',
-          );
-          return;
-        }
-      } catch (e) {
-        Get.back();
-        CustomToast.showToast("Something went wrong", true);
+        CustomToast.showToast('Contact saved', false);
+        contactsController.fetchContacts('0');
+      } catch (_) {
+        CustomLoader.dismisLoader();
+        CustomToast.showToast('Could not save this contact. Try again.', true);
       }
     }
   }
 
   validateForms() async {
-    if (fullNameController.text.isEmpty || fullNameController.text == null) {
+    if (fullNameController.text.trim().isEmpty) {
       CustomToast.showToast("Please enter contact name", true);
 
       return false;
@@ -155,7 +146,7 @@ class AddNewContactController extends GetxController {
       for (int i = 0; i < contactFieldsData.length; i++) {
         if (contactFieldsData[i]['controller'].text.toString().isEmpty ||
             contactFieldsData[i]['controller'].text == null) {
-          Get.back();
+          CustomLoader.dismisLoader();
           CustomToast.showToast("Please enter a phone number", true);
           return false;
         }
@@ -166,21 +157,21 @@ class AddNewContactController extends GetxController {
                 .replaceAll(RegExp(r'[\s().-]'), ''));
 
         if (isPhoneValid.runtimeType == String) {
-          Get.back();
-          CustomToast.showToast("Something went wrong", true);
+          CustomLoader.dismisLoader();
+          CustomToast.showToast("Could not check this number. Try again.", true);
           return false;
         }
         if (isPhoneValid == null || isPhoneValid == false) {
-          Get.back();
+          CustomLoader.dismisLoader();
           CustomToast.showToast("Invalid phone number entered", true);
           return false;
         }
       }
-      Get.back();
+      CustomLoader.dismisLoader();
     } catch (e) {
-      Get.back();
+      CustomLoader.dismisLoader();
       print(e.toString());
-      CustomToast.showToast("Something went wrong", true);
+      CustomToast.showToast("Could not check this number. Try again.", true);
 
       return false;
     }

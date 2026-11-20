@@ -152,26 +152,17 @@ class EditContactController extends GetxController {
             numbers[0].label ?? '',
             numbers[0].number ?? '',
             emails[0].email ?? '');
+        CustomLoader.dismisLoader();
+        if (res != true) {
+          CustomToast.showToast('Could not save this contact. Check the details and try again.', true);
+          return;
+        }
         Get.back();
-        if (res.runtimeType == String) {
-          CustomToast.showToast(res, true);
-          return;
-        }
-        if (res.runtimeType == null) {
-          CustomToast.showToast("Something went wrong", true);
-          return;
-        }
-        if (res) {
-          Get.back();
-          CustomToast.showToast("Contact updated successfully", false);
-          contactsController.fetchContacts(
-            '0',
-          );
-          return;
-        }
-      } catch (e) {
-        Get.back();
-        CustomToast.showToast("Something went wrong", true);
+        CustomToast.showToast('Contact saved', false);
+        contactsController.fetchContacts('0');
+      } catch (_) {
+        CustomLoader.dismisLoader();
+        CustomToast.showToast('Could not save this contact. Try again.', true);
       }
     }
   }
@@ -179,7 +170,7 @@ class EditContactController extends GetxController {
   validateForms() {
     RegExp phoneRegexp = RegExp(r'^\+?[0-9]{7,15}$');
 
-    if (fullNameController.text.isEmpty || fullNameController.text == null) {
+    if (fullNameController.text.trim().isEmpty) {
       CustomToast.showToast("Please enter contact name", true);
 
       return false;

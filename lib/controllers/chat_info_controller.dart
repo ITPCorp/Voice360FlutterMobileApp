@@ -47,84 +47,39 @@ class ChatInfoController extends GetxController {
     }
   }
 
-  addContact() async {
-    if (fullNameController.text.isEmpty || fullNameController.text == null) {
-      CustomToast.showToast("Please enter contact name", true);
+  Future<void> addContact() => _saveContact(create: true);
+  Future<void> updateContact() => _saveContact(create: false);
 
+  Future<void> _saveContact({required bool create}) async {
+    final name = fullNameController.text.trim();
+    if (name.isEmpty) {
+      CustomToast.showToast('Enter a contact name', true);
       return;
     }
+    if (isLoading.value) return;
     isLoading.value = true;
     try {
-      var res = await repo.createContact(fullNameController.text, 'work', phone, '');
-      if (res.runtimeType == String) {
-        CustomToast.showToast(res, true);
+      final saved = create
+          ? await repo.createContact(name, 'work', phone, '')
+          : await repo.updateContact(pk, name, 'work', phone, '');
+      if (saved != true) {
+        CustomToast.showToast('Could not save this contact. Try again.', true);
+        return;
       }
-      if (res.runtimeType == null) {
-        CustomToast.showToast("Something went wrong", true);
-      }
-      if (res) {
-        CustomToast.showToast("New contact created successfully", false);
-
-        contactsController.fetchContacts('0',);
-        try {
-          final res = await repo.getContacts('0',);
-          if (res.runtimeType == ContactResponse) {
-            for (Contact contact in (res as ContactResponse).result ?? <Contact>[]) {
-              if (contact.phone == phone) {
-                initialName = contact.firstname ?? '';
-                fullNameController.text = contact.firstname ?? "";
-                pk = contact.pk;
-              }
-            }
-          }
-        } catch (e) {
-          null;
+      CustomToast.showToast('Contact saved', false);
+      await contactsController.fetchContacts('0');
+      _matchAgainstList(contactsController.unfilteredData);
+      if (pk == null) {
+        final matches = await repo.searchContacts('0', phone);
+        if (matches is ContactResponse) {
+          _matchAgainstList(matches.result ?? <Contact>[]);
         }
       }
-    } catch (e) {
-      CustomToast.showToast("Something went wrong", true);
+    } catch (_) {
+      CustomToast.showToast('Could not save this contact. Try again.', true);
+    } finally {
+      isLoading.value = false;
     }
-    isLoading.value = false;
-  }
-
-  updateContact() async {
-    if (fullNameController.text.isEmpty || fullNameController.text == null) {
-      CustomToast.showToast("Please enter contact name", true);
-
-      return;
-    }
-    isLoading.value = true;
-    try {
-      var res = await repo.updateContact(pk, fullNameController.text, 'work', phone, '');
-      if (res.runtimeType == String) {
-        CustomToast.showToast(res, true);
-      }
-      if (res.runtimeType == null) {
-        CustomToast.showToast("Something went wrong", true);
-      }
-      if (res) {
-        CustomToast.showToast("Updated Contact successfully", false);
-
-        contactsController.fetchContacts('0',);
-        try {
-          final res = await repo.getContacts('0');
-          if (res.runtimeType == ContactResponse) {
-            for (Contact contact in (res as ContactResponse).result ?? <Contact>[]) {
-              if (contact.phone == phone) {
-                initialName = contact.firstname ?? '';
-                fullNameController.text = contact.firstname ?? "";
-                pk = contact.pk;
-              }
-            }
-          }
-        } catch (e) {
-          null;
-        }
-      }
-    } catch (e) {
-      CustomToast.showToast("Something went wrong", true);
-    }
-    isLoading.value = false;
   }
 
   @override

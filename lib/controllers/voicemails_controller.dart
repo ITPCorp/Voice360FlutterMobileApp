@@ -83,21 +83,23 @@ class VoiceMailsController extends GetxController {
     return find();
   }
 
-  deleteVoiceMail(id) async {
-    Get.back();
+  Future<bool> deleteVoiceMail(String? id) async {
+    if (id == null || id.isEmpty) return false;
     CustomLoader.showLoader();
     var res = await repo.deleteVoicemail(id);
-    Get.back();
+    CustomLoader.dismisLoader();
 
-    if (res is String) {
-      CustomToast.showToast(res, true);
+    if (res != true) {
+      CustomToast.showToast('Could not delete this voicemail. Try again.', true);
+      return false;
     } else {
       voiceMails.removeWhere((v) => v.msgId == id);
       if (AppCache.instance.isReady) {
-        AppCache.instance.voicemails.remove(id?.toString() ?? '');
+        AppCache.instance.voicemails.remove(id);
       }
       update();
       fetchVoiceMails();
+      return true;
     }
   }
 
@@ -139,7 +141,6 @@ class VoiceMailsController extends GetxController {
     }
     savePath = '$dir/ITP Voicemails/voicemail_$id.mp3';
     try {
-      Get.back();
       CustomLoader.showLoader();
       await Dio().download(
         '${Endpoints.DOWNLOAD_VOICE_MAIL_MESSAGES(apiId)}/$id?token=$token',
@@ -150,16 +151,12 @@ class VoiceMailsController extends GetxController {
           }
         },
       );
-      Get.back();
       CustomToast.showToast('Voicemail saved', false);
-    } on DioError catch (_) {
-      Get.back();
-      savePath = '';
-      CustomToast.showToast(
-          'Something went wrong while downloading voicemail', true);
     } catch (_) {
-      Get.back();
-      CustomToast.showToast('Something went wrong', true);
+      savePath = '';
+      CustomToast.showToast('Could not download this voicemail. Try again.', true);
+    } finally {
+      CustomLoader.dismisLoader();
     }
   }
 

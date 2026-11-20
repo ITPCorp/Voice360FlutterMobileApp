@@ -248,7 +248,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
           Get.find<CallScreenController>().handleAccept();
         }
       } catch (e) {
-        CustomToast.showToast(e.toString(), true);
+        CustomToast.showToast('Could not answer. Try the answer button on the call screen.', true);
       }
     }
   }
@@ -258,7 +258,7 @@ class MyAudioHandler extends BaseAudioHandler with QueueHandler, SeekHandler {
     try {
       ActiveCallService.instance.hangup();
     } catch (e) {
-      CustomToast.showToast(e.toString(), true);
+      CustomToast.showToast('Could not end the call. Try again from the call screen.', true);
     }
   }
 }

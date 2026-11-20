@@ -148,8 +148,8 @@ class BaseRequester {
         CustomLoader.dismisLoader();
       }
       CustomToast.showToast(
-          "There seems to be your network problem or a server side issue. Please try again or report the bug to the manager.",
-          false);
+          "Could not connect. Check your connection and try again.",
+          true);
 
       return null;
     }
@@ -328,7 +328,7 @@ class BaseRequester {
           body: jsonEncode(body));
 
       _logRequestOnAlice(response);
-      CustomLoader.dismisLoader();
+      if (loading == true) CustomLoader.dismisLoader();
 
       var jsonData;
       if (response.statusCode == 200) {
@@ -350,7 +350,7 @@ class BaseRequester {
       }
     } catch (SocketException) {
       print(SocketException);
-      CustomLoader.dismisLoader();
+      if (loading == true) CustomLoader.dismisLoader();
       return null;
     }
   }
@@ -372,7 +372,7 @@ class BaseRequester {
           body: jsonEncode(body));
 
       _logRequestOnAlice(response);
-      CustomLoader.dismisLoader();
+      if (loading == true) CustomLoader.dismisLoader();
 
       var jsonData;
       if (response.statusCode == 200) {
@@ -394,7 +394,7 @@ class BaseRequester {
       }
     } catch (SocketException) {
       print(SocketException);
-      CustomLoader.dismisLoader();
+      if (loading == true) CustomLoader.dismisLoader();
 
       return null;
     }
