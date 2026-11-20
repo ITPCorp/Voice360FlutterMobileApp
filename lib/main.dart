@@ -90,7 +90,13 @@ Future<void> _bootstrapInBackground() async {
   // Only Android has a Dart-side fallback; iOS would only get here if
   // native init genuinely failed, and our hardcoded options are Android's.
   try {
-    Firebase.app();
+    if (Platform.isIOS) {
+      // FlutterFire's Dart registry starts empty even when the default
+      // native app is already configured from GoogleService-Info.plist.
+      await Firebase.initializeApp();
+    } else {
+      Firebase.app();
+    }
     firebaseReady = true;
     // ignore: avoid_print
     print('[Firebase] Default app available (native init)');
