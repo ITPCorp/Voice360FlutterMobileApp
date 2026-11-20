@@ -1,5 +1,6 @@
 package com.appicator.itp_voice
 
+import android.content.Intent
 import com.google.firebase.messaging.RemoteMessage
 import io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService
 
@@ -10,6 +11,11 @@ import io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService
  * (token refresh, SMS pushes) goes through firebase_messaging as before.
  */
 class AppWakeMessagingService : FlutterFirebaseMessagingService() {
+    override fun handleIntent(intent: Intent) {
+        NotificationInbox.tagFirebaseNotification(intent)
+        super.handleIntent(intent)
+    }
+
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         val data = remoteMessage.data
         if (data["type"] == AppWake.PUSH_TYPE) {

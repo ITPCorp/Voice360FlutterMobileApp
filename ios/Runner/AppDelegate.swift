@@ -51,6 +51,25 @@ import WebRTC
     GeneratedPluginRegistrant.register(with: registry)
     if let registrar = registry.registrar(forPlugin: "Voice360AppWake") {
       AppWakeCalls.shared.attach(messenger: registrar.messenger())
+      let inbox = FlutterMethodChannel(name: "voice360/notification_inbox", binaryMessenger: registrar.messenger())
+      inbox.setMethodCallHandler { call, result in
+        let center = UNUserNotificationCenter.current()
+        switch call.method {
+        case "active":
+          center.getDeliveredNotifications { notes in
+            let rows: [[String: Any]] = notes.map { note in
+              let info = note.request.content.userInfo
+              return ["key": note.request.identifier, "payload": info["payload"] ?? info]
+            }
+            DispatchQueue.main.async { result(rows) }
+          }
+        case "remove":
+          center.removeDeliveredNotifications(withIdentifiers: call.arguments as? [String] ?? [])
+          result(nil)
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
     }
   }
 

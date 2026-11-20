@@ -25,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this, initialIndex: con.dialTab);
-    _tabs.addListener(() => con.dialTab = _tabs.index);
+    _tabs.addListener(() => con.selectDialTab(_tabs.index));
     _missed = ever(con.missedCall, (target) {
       if (target != null) _tabs.animateTo(1);
     });

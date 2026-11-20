@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
                 if (call.method == "take") result.success(consumeMissedTap()) else result.notImplemented()
             }
         }
+        NotificationInbox.attach(this, AppWake.engine(applicationContext).dartExecutor.binaryMessenger)
         showOverLockIfCall(intent)
         openCallIfAsked(intent)
     }

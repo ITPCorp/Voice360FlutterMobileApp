@@ -11,6 +11,7 @@ import 'package:itp_voice/services/global_socket_service.dart';
 import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:itp_voice/services/push_service.dart';
 import 'package:itp_voice/services/notification_destination.dart';
+import 'package:itp_voice/services/notification_inbox.dart';
 import 'package:itp_voice/storage_keys.dart';
 import 'package:itp_voice/widgets/custom_toast.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -56,8 +57,15 @@ class BaseScreenController extends GetxController
     CallWakeService.instance.ensureCallPermissions();
   }
 
+  void selectDialTab(int index) {
+    if (dialTab == index) return;
+    dialTab = index;
+    if (index == 1 && currentTab.value == 0) NotificationInbox.recent();
+  }
+
   updateCurrentTab(int val) {
     currentTab.value = val;
+    if (val == 0 && dialTab == 1) NotificationInbox.recent();
   }
 
   void _bindEventListeners() {

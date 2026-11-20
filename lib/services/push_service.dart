@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:get/get.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:itp_voice/services/notification_inbox.dart';
 import 'package:itp_voice/controllers/chat_controller.dart';
 import 'package:itp_voice/controllers/voicemails_controller.dart';
 import 'package:itp_voice/services/notification_destination.dart';
@@ -292,16 +293,18 @@ class PushService {
       id,
       title,
       body,
-      const NotificationDetails(
+      NotificationDetails(
         android: AndroidNotificationDetails(
           _androidChannelId,
           _androidChannelName,
           channelDescription: _androidChannelDescription,
-          largeIcon: DrawableResourceAndroidBitmap('notification_voice360'),
+          tag: NotificationInbox.androidTag(NotificationDestination.parse(data)),
+          autoCancel: true,
+          largeIcon: const DrawableResourceAndroidBitmap('notification_voice360'),
           importance: Importance.high,
           priority: Priority.high,
         ),
-        iOS: DarwinNotificationDetails(),
+        iOS: const DarwinNotificationDetails(),
       ),
       payload: jsonEncode(data),
     );
@@ -356,6 +359,7 @@ class PushService {
     if (target.screen == NotificationScreen.thread &&
         Get.currentRoute == Routes.CHAT_SCREEN_ROUTE &&
         ChatController.visibleThreadId == target.id) {
+      NotificationInbox.thread(target.id);
       return;
     }
     Get.until((r) => r.settings.name == Routes.BASE_SCREEN_ROUTE || r.isFirst);

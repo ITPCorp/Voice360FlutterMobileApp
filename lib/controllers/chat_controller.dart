@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:itp_voice/services/notification_inbox.dart';
 import 'package:itp_voice/helpers/group_chat.dart';
 import 'package:itp_voice/locator.dart';
 import 'package:itp_voice/models/get_message_threads_response_model/get_message_threads_response_model.dart'
@@ -334,6 +335,7 @@ class ChatController extends GetxController {
   }
 
   void _loadThreadMode() {
+    if (!isClosed) NotificationInbox.thread(threadId.value);
     if (isClosed) return;
     fetchChat();
     final tid = threadId.value;

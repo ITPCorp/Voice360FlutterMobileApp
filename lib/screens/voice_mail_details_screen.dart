@@ -1,3 +1,4 @@
+import 'package:itp_voice/services/notification_inbox.dart';
 import 'package:itp_voice/routes.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -25,6 +26,7 @@ class _VoiceMailDetailsScreenState extends State<VoiceMailDetailsScreen> {
     super.initState();
     final args = Get.arguments;
     vm = (args is VoiceMails) ? args : con.voiceMail;
+    NotificationInbox.voicemail(vm.msgId, vm.pk);
   }
 
   @override
