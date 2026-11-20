@@ -280,7 +280,19 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   /// Start the UA (if it is not running) with the stored app_phone device.
   /// Used by the wake path and by BaseScreenController.
-  Future<bool> startUa() async {
+  Future<bool>? _starting;
+
+  /// Serialized: resume and the home screen can both ask at once, and a second
+  /// helper.start() replaces the first UA mid-REGISTER (orphan binding).
+  Future<bool> startUa() {
+    final pending = _starting;
+    if (pending != null) return pending;
+    final f = _startUa().whenComplete(() => _starting = null);
+    _starting = f;
+    return f;
+  }
+
+  Future<bool> _startUa() async {
     if (_uaRunning && (helper.connected || helper.connecting)) {
       return true;
     }
@@ -313,7 +325,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   /// Unregister and stop the UA.
   Future<void> stopUa(String why) async {
-    if (!_uaRunning) return;
+    if (!_uaRunning && !helper.registered && !helper.connected) return;
     _log('stopping UA: $why');
     _uaRunning = false;
     try {
@@ -675,6 +687,8 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _log('lifecycle $state (foreground=$_foreground, ua=$_uaRunning, '
+        'registered=${helper.registered}, calls=${_calls.length}, sip=${_activeSip.length})');
     switch (state) {
       case AppLifecycleState.resumed:
         _foreground = true;
@@ -703,8 +717,15 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   /// In the background with no call: unregister so the next call pushes.
   void _maybeGoQuiet() {
-    if (_foreground || !_uaRunning) return;
-    if (_calls.isNotEmpty || _activeSip.isNotEmpty) return;
+    // Real registration state, not only our flag: whatever started the UA, a
+    // backgrounded app with no call must not stay registered.
+    if (_foreground) return;
+    if (!_uaRunning && !helper.registered && !helper.connected) return;
+    if (_calls.isNotEmpty || _activeSip.isNotEmpty) {
+      _log('staying registered in the background: '
+          '${_calls.length} woken call(s), ${_activeSip.length} SIP call(s)');
+      return;
+    }
     _quietTimer?.cancel();
     // A short grace so a permission dialog or the full-screen call activity
     // covering the app does not drop the registration.
