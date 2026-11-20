@@ -93,7 +93,17 @@ Future<void> _bootstrapInBackground() async {
     if (Platform.isIOS) {
       // FlutterFire's Dart registry starts empty even when the default
       // native app is already configured from GoogleService-Info.plist.
-      await Firebase.initializeApp();
+      try {
+        await Firebase.initializeApp();
+      } on FirebaseException catch (error) {
+        if (error.code != 'duplicate-app' &&
+            !(error.message ?? '').toLowerCase().contains('already exists')) {
+          rethrow;
+        }
+        // PushKit can start the native engine before the first scene connects.
+        // Confirm the default app is available to Dart before wiring messaging.
+        Firebase.app();
+      }
     } else {
       Firebase.app();
     }
