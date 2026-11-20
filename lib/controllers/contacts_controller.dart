@@ -1,3 +1,4 @@
+import 'package:itp_voice/helpers/page_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/cache/cache_service.dart';
@@ -64,9 +65,39 @@ class ContactsController extends GetxController {
     update();
   }
 
+  static bool _hasContactInfo(Contact c) => [
+        c.firstname,
+        c.lastname,
+        c.phone,
+        c.email
+      ].any((value) => value != null && value.trim().isNotEmpty);
+
   /// Fetch a page of the full contacts list. Page 0 replaces the in-memory
   /// list atomically; later pages append. Never mutated by search.
+  Future<void>? _pending;
+  String? _offset;
+  bool get refreshing => _pending != null && _offset == '0';
+
   Future<void> fetchContacts(String offSet) async {
+    final pending = _pending;
+    if (pending != null) {
+      if (_offset == offSet || offSet != '0') return pending;
+      await pending;
+    }
+    _offset = offSet;
+    final request = _fetch(offSet);
+    _pending = request;
+    try {
+      await request;
+    } finally {
+      if (identical(request, _pending)) {
+        _pending = null;
+        update();
+      }
+    }
+  }
+
+  Future<void> _fetch(String offSet) async {
     if (offSet == '0') {
       conOffSet.value = 0;
       totalPages.value = 0;
@@ -86,16 +117,17 @@ class ContactsController extends GetxController {
       currentPage.value = currentPage.value + 1;
       conOffSet.value = conOffSet.value + 20;
       if (res.result != null) {
-        final filtered = res.result!
-            .where((c) => (c.firstname != null && c.firstname!.isNotEmpty))
-            .toList();
+        final filtered = res.result!.where(_hasContactInfo).toList();
         if (offSet == '0') {
-          _allContacts = filtered;
+          _allContacts = mergeFirstPage(filtered, _allContacts, (c) => c.pk,
+              hasMore: (res.result?.length ?? 0) >= 20);
+          conOffSet.value = _allContacts.length < 20 ? 20 : _allContacts.length;
+          currentPage.value = (conOffSet.value / 20).ceil();
         } else {
           // De-dupe on pk so re-fetches don't double rows.
           final seen = _allContacts.map((c) => c.pk).toSet();
           for (final c in filtered) {
-            if (!seen.contains(c.pk)) _allContacts.add(c);
+            if (seen.add(c.pk)) _allContacts.add(c);
           }
         }
         if (AppCache.instance.isReady) {
@@ -126,9 +158,7 @@ class ContactsController extends GetxController {
     isSearching = false;
     searchFailed = res is! ContactResponse;
     if (res is ContactResponse && res.result != null) {
-      final filtered = res.result!
-          .where((c) => (c.firstname != null && c.firstname!.isNotEmpty))
-          .toList();
+      final filtered = res.result!.where(_hasContactInfo).toList();
       // De-dupe just in case the backend returns the same pk twice.
       final seen = <int?>{};
       _searchResults = [
@@ -180,7 +210,7 @@ class ContactsController extends GetxController {
     if (query.isEmpty) return _allContacts;
 
     // Active server search — render those results.
-    if (_activeSearchQuery == query) return _searchResults;
+    if (_activeSearchQuery == query && !isSearching) return _searchResults;
 
     // Server hasn't responded yet for the current keystroke — show an
     // instant client-side filter on whatever full-list data we already have.

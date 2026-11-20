@@ -1,3 +1,4 @@
+import 'package:itp_voice/helpers/page_refresh.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/cache/cache_service.dart';
@@ -58,17 +59,33 @@ class CallHistoryController extends GetxController {
     }
   }
 
-  bool _fetching = false;
+  Future<void>? _pending;
+  bool get refreshing => _pending != null;
 
   Future<void> refreshCalls() async {
-    if (_fetching) return;
+    final pending = _pending;
+    if (pending != null) {
+      if (apiOffset == 0) return pending;
+      await pending;
+    }
     apiOffset = 0;
     await getCallHistory();
   }
 
   Future<void> getCallHistory() async {
-    if (_fetching) return;
-    _fetching = true;
+    final pending = _pending;
+    if (pending != null) return pending;
+    final request = _fetch();
+    _pending = request;
+    try {
+      await request;
+    } finally {
+      if (identical(_pending, request)) _pending = null;
+      update();
+    }
+  }
+
+  Future<void> _fetch() async {
     try {
       // Show shimmer only when the screen has nothing to render.
       final hasAny = todayCallHistory.isNotEmpty ||
@@ -90,9 +107,17 @@ class CallHistoryController extends GetxController {
         apiOffset = apiOffset + apiLimit;
         if (apiOffset <= apiLimit) {
           // First page: swap fresh data in.
-          _bucketise(res, replaceAll: true);
+          final previous = [
+            ...todayCallHistory,
+            ...yesterdayCallHistory,
+            ...callHistoryList
+          ];
+          final merged = mergeFirstPage(res, previous, (c) => c.cdrPk,
+              hasMore: res.length >= apiLimit);
+          apiOffset = merged.length;
+          _bucketise(merged, replaceAll: true);
           if (AppCache.instance.isReady) {
-            AppCache.instance.callHistory.writeAll(res);
+            AppCache.instance.callHistory.writeAll(merged);
           }
         } else {
           // Append for pagination.
@@ -108,7 +133,6 @@ class CallHistoryController extends GetxController {
         }
       }
     } finally {
-      _fetching = false;
       isLoading = false;
       update();
     }
@@ -127,8 +151,8 @@ class CallHistoryController extends GetxController {
     }
     final q = searchController.text.trim().toLowerCase();
     if (q.isNotEmpty) {
-      filtered = filtered.where((c) =>
-          (c.name ?? '').toLowerCase().contains(q));
+      filtered =
+          filtered.where((c) => (c.name ?? '').toLowerCase().contains(q));
     }
     return filtered.toList();
   }
@@ -140,7 +164,7 @@ class CallHistoryController extends GetxController {
     scrollController.addListener(() {
       if (scrollController.position.pixels ==
               scrollController.position.maxScrollExtent &&
-          apiLimit == itemCount) {
+          apiOffset < itemCount) {
         getCallHistory();
       }
     });

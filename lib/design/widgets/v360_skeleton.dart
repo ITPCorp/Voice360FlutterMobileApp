@@ -11,7 +11,8 @@ class V360Skeleton extends StatefulWidget {
     super.key,
     this.width,
     this.height = 14,
-    this.borderRadius = const BorderRadius.all(Radius.circular(V360Radius.base)),
+    this.borderRadius =
+        const BorderRadius.all(Radius.circular(V360Radius.base)),
   });
 
   factory V360Skeleton.line({double? width, double height = 14}) =>
@@ -81,4 +82,16 @@ class _V360SkeletonState extends State<V360Skeleton>
       },
     );
   }
+}
+
+/// Reserves the same two pixels while idle so cached rows never shift.
+class V360RefreshLine extends StatelessWidget {
+  const V360RefreshLine({super.key, required this.active});
+  final bool active;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+      height: 2,
+      child: active
+          ? const LinearProgressIndicator(semanticsLabel: 'Refreshing')
+          : null);
 }

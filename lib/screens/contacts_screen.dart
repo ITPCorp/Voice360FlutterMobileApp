@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:itp_voice/design/widgets/v360_live_list.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/contacts_controller.dart';
@@ -111,6 +112,8 @@ class _ContactsScreenState extends State<ContactsScreen> {
                   },
                 ),
               ),
+              V360RefreshLine(
+                  active: con.refreshing && con.unfilteredData.isNotEmpty),
               Expanded(
                 child: con.isContactsLoading && con.unfilteredData.isEmpty
                     ? const _ContactsLoading()
@@ -187,42 +190,32 @@ class _ContactsScreenState extends State<ContactsScreen> {
         return an.compareTo(bn);
       });
 
-    final List<Widget> items = [];
-    // Skip A-Z section headers while searching — they add visual noise
-    // when the list is small. Matches voice360-fe's behaviour (table-style
-    // results, no grouping).
+    final rows = <Object>[];
+    final ids = <Object>[];
     String? lastLetter;
     for (final c in sorted) {
       final name = ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim();
-      if (!isSearching) {
-        final letter = name.isEmpty ? '#' : name[0].toUpperCase();
-        if (letter != lastLetter) {
-          items.add(V360SectionHeader(title: letter));
-          lastLetter = letter;
-        }
+      final letter = name.isEmpty ? '#' : name[0].toUpperCase();
+      if (!isSearching && letter != lastLetter) {
+        rows.add(letter);
+        ids.add('section $letter');
+        lastLetter = letter;
       }
-      items.add(_contactRow(c, name));
+      rows.add(c);
+      ids.add(c.pk ?? c);
     }
-    // Footer spinner — only on the full list. Searches return all matches in
-    // one page, so there's no "load more" path.
-    if (!isSearching && con.isContactsLoading) {
-      items.add(const Padding(
-        padding: EdgeInsets.all(V360Spacing.s4),
-        child: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2.4),
-          ),
-        ),
-      ));
-    }
-
-    final list = ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
+    final list = V360LiveList(
+      key: ValueKey(con.searchController.text.trim()),
       controller: _scroll,
+      ids: ids,
       padding: const EdgeInsets.only(bottom: V360Spacing.s10),
-      children: items,
+      itemBuilder: (_, i) {
+        final item = rows[i];
+        if (item is String) return V360SectionHeader(title: item);
+        final c = item as Contact;
+        return _contactRow(
+            c, ('${c.firstname ?? ''} ${c.lastname ?? ''}').trim());
+      },
     );
     return isSearching
         ? list

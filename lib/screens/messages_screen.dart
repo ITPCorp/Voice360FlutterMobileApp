@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:itp_voice/design/widgets/v360_live_list.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/messages_controller.dart';
 import 'package:itp_voice/design/v360.dart';
@@ -78,6 +79,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
               },
             ),
           ),
+          Obx(() => V360RefreshLine(active: con.refreshing.value)),
           Expanded(
             child: Obx(() {
               if (con.isloading.value && con.threads.isEmpty) {
@@ -117,30 +119,31 @@ class _MessagesScreenState extends State<MessagesScreen> {
               // list (not filtered search results) and there's actually more
               // data to load.
               final showFooter = !isSearching && con.hasMore;
-              final itemCount = con.threads.length + (showFooter ? 1 : 0);
+              final threads = con.threads.toList(growable: false);
               return RefreshIndicator(
                 onRefresh: () async => con.loadThreads(),
-                child: ListView.separated(
-                  physics: const AlwaysScrollableScrollPhysics(),
+                child: V360LiveList(
+                  key: ValueKey(
+                      (con.selectedNumber, con.searchController.text.trim())),
+                  ids: [
+                    for (final t in threads) t.pk ?? t,
+                    if (showFooter) 'footer'
+                  ],
+                  versionAt: (i) => i < threads.length
+                      ? (threads[i].lastUpdated, threads[i].lastMessage)
+                      : null,
                   controller: _scroll,
                   padding: const EdgeInsets.only(bottom: V360Spacing.s10),
-                  itemCount: itemCount,
-                  separatorBuilder: (_, i) {
-                    // No divider above the footer slot.
-                    if (showFooter && i == con.threads.length - 1) {
-                      return const SizedBox.shrink();
-                    }
-                    return Divider(
-                      height: 1,
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                      indent: 76,
-                    );
-                  },
                   itemBuilder: (_, i) {
-                    if (showFooter && i == con.threads.length) {
-                      return const _LoadMoreFooter();
-                    }
-                    return _threadRow(con.threads[i]);
+                    if (i == threads.length) return const _LoadMoreFooter();
+                    return Column(children: [
+                      _threadRow(threads[i]),
+                      if (i + 1 < threads.length)
+                        Divider(
+                            height: 1,
+                            color: Theme.of(context).colorScheme.outlineVariant,
+                            indent: 76),
+                    ]);
                   },
                 ),
               );

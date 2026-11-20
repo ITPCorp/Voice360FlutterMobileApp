@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:itp_voice/design/widgets/v360_live_list.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/call_history_controller.dart';
@@ -28,15 +29,19 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
     _missed = ever(base.missedCall, (target) {
       if (target != null) _revealMissed();
     });
-    if (base.missedCall.value != null)
+    if (base.missedCall.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _revealMissed());
+    }
   }
 
   void _revealMissed() {
     if (!mounted) return;
     setState(() => _filter = _Filter.all);
     con.searchController.clear();
-    if (con.scrollController.hasClients) con.scrollController.jumpTo(0);
+    if (con.scrollController.hasClients) {
+      con.scrollController
+          .jumpTo(con.scrollController.position.minScrollExtent);
+    }
     con.refreshCalls();
   }
 
@@ -81,8 +86,9 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
             Obx(() {
               final target = base.missedCall.value;
               final caller = target?.caller ?? target?.number;
-              if (caller == null || caller.isEmpty)
+              if (caller == null || caller.isEmpty) {
                 return const SizedBox.shrink();
+              }
               final time = target?.time;
               final local = time == null
                   ? null
@@ -98,6 +104,7 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
                       icon: const Icon(Icons.close),
                       onPressed: () => base.missedCall.value = null));
             }),
+            V360RefreshLine(active: con.refreshing && !con.isLoading),
             Expanded(
               child: con.isLoading && con.callHistoryList.isEmpty
                   ? const _CallHistoryLoading()
@@ -198,38 +205,27 @@ class _CallHistoryScreenState extends State<CallHistoryScreen> {
       );
     }
 
+    final rows = <Object>[
+      if (today.isNotEmpty) ...['Today', ...today],
+      if (yesterday.isNotEmpty) ...['Yesterday', ...yesterday],
+      if (earlier.isNotEmpty) ...['Earlier', ...earlier],
+    ];
     return RefreshIndicator(
-        onRefresh: con.refreshCalls,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          controller: con.scrollController,
-          padding: const EdgeInsets.only(bottom: V360Spacing.s10),
-          children: [
-            if (today.isNotEmpty) ...[
-              const V360SectionHeader(title: 'Today'),
-              ...today.map((c) => _row(context, c)),
-            ],
-            if (yesterday.isNotEmpty) ...[
-              const V360SectionHeader(title: 'Yesterday'),
-              ...yesterday.map((c) => _row(context, c)),
-            ],
-            if (earlier.isNotEmpty) ...[
-              const V360SectionHeader(title: 'Earlier'),
-              ...earlier.map((c) => _row(context, c)),
-            ],
-            if (con.isLoading && con.callHistoryList.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.all(V360Spacing.s4),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2.4),
-                  ),
-                ),
-              ),
-          ],
-        ));
+      onRefresh: con.refreshCalls,
+      child: V360LiveList(
+        ids: [
+          for (final row in rows) row is CallHistory ? row.cdrPk ?? row : row
+        ],
+        controller: con.scrollController,
+        padding: const EdgeInsets.only(bottom: V360Spacing.s10),
+        itemBuilder: (_, i) {
+          final row = rows[i];
+          return row is CallHistory
+              ? _row(context, row)
+              : V360SectionHeader(title: row as String);
+        },
+      ),
+    );
   }
 
   Widget _row(BuildContext context, CallHistory c) {

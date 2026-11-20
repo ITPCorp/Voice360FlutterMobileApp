@@ -1,3 +1,4 @@
+import 'package:itp_voice/helpers/page_refresh.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -16,7 +17,7 @@ class MessagesController extends GetxController {
   MessagesRepo repo = MessagesRepo();
 
   List<MessageThreads> get threads =>
-      filteredThreads.isEmpty ? allThreads.toList() : filteredThreads.toList();
+      _query.value.isEmpty ? allThreads : filteredThreads;
   RxList<MessageThreads> allThreads = <MessageThreads>[].obs;
   RxList<MessageThreads> filteredThreads = <MessageThreads>[].obs;
 
@@ -27,6 +28,10 @@ class MessagesController extends GetxController {
   String? get selectedNumber => selectedNumberRx.value;
   set selectedNumber(String? v) => selectedNumberRx.value = v;
 
+  final _query = ''.obs;
+  final refreshing = false.obs;
+  int _generation = 0;
+  String? _loadedNumber;
   RxBool isloading = false.obs;
 
   /// True while the bottom-of-list "load more" request is in flight.
@@ -64,14 +69,21 @@ class MessagesController extends GetxController {
   /// Refresh — fetch the first page, replace the list.
   loadThreads() async {
     final from = selectedNumber ?? '';
+    final generation = ++_generation;
+    if (from != _loadedNumber) {
+      _loadedNumber = from;
+      _hydratedFromCache = false;
+      allThreads.clear();
+      filteredThreads.clear();
+      _nextOffset = 0;
+      _reachedEnd = false;
+    }
+    isLoadingMore.value = false;
     hydrateFromCache();
+    filterThreads();
     // Show shimmer only when nothing is on screen.
     isloading.value = allThreads.isEmpty;
-    filteredThreads.clear();
-    searchController.clear();
-
-    _nextOffset = 0;
-    _reachedEnd = false;
+    refreshing.value = allThreads.isNotEmpty;
 
     // No texting number assigned: there is nothing to ask the API for (the
     // URL without a number is a 404), so show the empty state.
@@ -84,18 +96,22 @@ class MessagesController extends GetxController {
     }
 
     final res = await repo.getMessageThreads(from, offset: 0);
+    if (generation != _generation || from != selectedNumber) return;
+    refreshing.value = false;
     loadFailed.value = res is! GetMessageThreadsResponseModel;
     if (res is GetMessageThreadsResponseModel) {
       final fresh = res.result?.messageThreads ?? const <MessageThreads>[];
-      allThreads.assignAll(fresh);
-      _nextOffset = fresh.length;
+      allThreads.assignAll(mergeFirstPage(fresh, allThreads, (t) => t.pk,
+          hasMore: fresh.length == MessagesRepo.kThreadsPageLimit));
+      filterThreads();
+      _nextOffset = allThreads.length;
       _reachedEnd = fresh.length < MessagesRepo.kThreadsPageLimit;
       // In-memory cache for the chat screen's "does a thread exist?" lookup.
       if (from.isNotEmpty) {
-        locator<ThreadsCache>().prime(from, fresh);
+        locator<ThreadsCache>().prime(from, allThreads.toList());
         // Persist to disk so the next cold start renders instantly.
         if (AppCache.instance.isReady) {
-          AppCache.instance.threads.write(from, fresh);
+          AppCache.instance.threads.write(from, allThreads.toList());
         }
       }
     }
@@ -107,19 +123,28 @@ class MessagesController extends GetxController {
   /// times — concurrent calls coalesce (only one request in flight) and a
   /// no-op once [hasMore] is false.
   Future<void> loadMoreThreads() async {
-    if (_reachedEnd || isLoadingMore.value) return;
+    if (_reachedEnd ||
+        isLoadingMore.value ||
+        refreshing.value ||
+        isloading.value) {
+      return;
+    }
     final from = selectedNumber ?? '';
     if (from.isEmpty) return;
 
+    final generation = _generation;
     isLoadingMore.value = true;
     try {
       final res = await repo.getMessageThreads(from, offset: _nextOffset);
+      if (generation != _generation || from != selectedNumber) return;
       if (res is GetMessageThreadsResponseModel) {
         final more = res.result?.messageThreads ?? const <MessageThreads>[];
         if (more.isEmpty) {
           _reachedEnd = true;
         } else {
-          allThreads.addAll(more);
+          final seen = allThreads.map((t) => t.pk).toSet();
+          allThreads.addAll(more.where((t) => seen.add(t.pk)));
+          filterThreads();
           _nextOffset += more.length;
           if (more.length < MessagesRepo.kThreadsPageLimit) {
             _reachedEnd = true;
@@ -132,15 +157,16 @@ class MessagesController extends GetxController {
         }
       }
     } finally {
-      isLoadingMore.value = false;
+      if (generation == _generation) isLoadingMore.value = false;
     }
   }
 
   /// Search by any participant's number or resolved name, so a group
   /// matches on every member, not only the first one.
   filterThreads() {
-    isloading.value = true;
     final query = searchController.text.trim().toLowerCase();
+    _query.value = query;
+    if (query.isEmpty) return;
     final queryDigits = query.replaceAll(RegExp(r'\D'), '');
     final matches = <MessageThreads>[];
     for (MessageThreads thread in allThreads) {
@@ -154,7 +180,6 @@ class MessagesController extends GetxController {
       if (hit) matches.add(thread);
     }
     filteredThreads.assignAll(matches);
-    isloading.value = false;
   }
 
   @override
@@ -192,4 +217,3 @@ class MessagesController extends GetxController {
     });
   }
 }
-

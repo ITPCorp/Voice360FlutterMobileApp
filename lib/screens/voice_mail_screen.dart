@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:itp_voice/design/widgets/v360_live_list.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/base_screen_controller.dart';
 import 'package:itp_voice/controllers/voicemails_controller.dart';
@@ -42,6 +43,8 @@ class _VoiceMailScreenState extends State<VoiceMailScreen> {
                   },
                 ),
               ),
+              V360RefreshLine(
+                  active: con.refreshing && con.voiceMails.isNotEmpty),
               Expanded(
                 child: con.isVoiceMailsLoading && con.voiceMails.isEmpty
                     ? const _VoicemailLoading()
@@ -82,16 +85,17 @@ class _VoiceMailScreenState extends State<VoiceMailScreen> {
     }
     return RefreshIndicator(
       onRefresh: () async => con.fetchVoiceMails(),
-      child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
+      child: V360LiveList(
+        ids: [for (final v in data) v.pk ?? v.msgId ?? v],
         padding: const EdgeInsets.only(bottom: V360Spacing.s10),
-        itemCount: data.length,
-        separatorBuilder: (_, __) => Divider(
-          height: 1,
-          color: Theme.of(context).colorScheme.outlineVariant,
-          indent: 76,
-        ),
-        itemBuilder: (_, i) => _row(data[i], i),
+        itemBuilder: (_, i) => Column(children: [
+          _row(data[i], i),
+          if (i + 1 < data.length)
+            Divider(
+                height: 1,
+                color: Theme.of(context).colorScheme.outlineVariant,
+                indent: 76),
+        ]),
       ),
     );
   }
