@@ -131,11 +131,9 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
         if (current?.id != c.id) return;
         state.value = s.state;
         if ((s.state == CallStateEnum.ACCEPTED || s.state == CallStateEnum.CONFIRMED) &&
-            connectedAt == null) {
-          connectedAt = DateTime.now();
-          _startTicker();
-          _startRoutePoll();
-          _syncProximity();
+            connectedAt == null &&
+            CallWakeService.instance.androidWakeFor(c.id) == null) {
+          _startConnectedCall(DateTime.now());
         }
         _pushNotification();
     }
@@ -187,6 +185,19 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
       _notifShown = false;
       _channel.invokeMethod('callEnded').catchError((Object _) => null);
     }
+  }
+
+  void wakeAudioReady(Call c, int mediaAt) {
+    if (call.value?.id != c.id || _ending || connectedAt != null) return;
+    _startConnectedCall(DateTime.fromMillisecondsSinceEpoch(mediaAt));
+    _pushNotification();
+  }
+
+  void _startConnectedCall(DateTime at) {
+    connectedAt = at;
+    _startTicker();
+    _startRoutePoll();
+    _syncProximity();
   }
 
   void _startTicker() {
@@ -393,7 +404,8 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
       'connected_at_ms': connectedAt?.millisecondsSinceEpoch ?? 0,
       'muted': muted.value,
       'speaker': speaker.value,
-      'status': isConnected ? 'On call' : 'Calling',
+      'status': CallWakeService.instance.connectingCall.value?.inviteId == c.id
+          ? 'Connecting…' : (isConnected ? 'On call' : 'Calling'),
     }).catchError((Object e) {
       _log('ongoing notification failed: $e');
       return null;

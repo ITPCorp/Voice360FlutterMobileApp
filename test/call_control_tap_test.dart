@@ -3,6 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/call_screen_controller.dart';
 import 'package:itp_voice/screens/call_screen.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
+import 'package:itp_voice/services/app_wake/wake_call.dart';
+import 'package:itp_voice/widgets/on_call_bar.dart';
 
 class _CallController extends CallScreenController {
   int muteTaps = 0;
@@ -24,6 +27,51 @@ class _CallController extends CallScreenController {
 }
 
 void main() {
+  testWidgets(
+      'connecting shows the push caller and allows hangup without a SIP call',
+      (tester) async {
+    var ended = false;
+    await tester.pumpWidget(MaterialApp(
+        home: ConnectingCallScreen(
+      caller: 'Dev caller',
+      hangup: () => ended = true,
+    )));
+    expect(find.text('Dev caller'), findsOneWidget);
+    expect(find.text('Connecting…'), findsOneWidget);
+    expect(find.text('In call'), findsNothing);
+    expect(find.text('00:00'), findsNothing);
+    await tester.tap(find.text('End call'));
+    expect(ended, isTrue);
+  });
+
+  testWidgets(
+      'a cold wake covers the existing route before any SIP call exists',
+      (tester) async {
+    final wake = CallWakeService.instance;
+    final c = WakeCall(const WakePush(
+        action: 'ring',
+        callId: 'cold-test',
+        uuid: 'cold-test',
+        callerName: 'Dev caller',
+        receivedAtMs: 1000));
+    final nav = GlobalKey<NavigatorState>();
+    addTearDown(() => wake.connectingCall.value = null);
+    await tester.pumpWidget(MaterialApp(
+        navigatorKey: nav,
+        builder: (_, child) => OnCallBarHost(child: child!),
+        home: const Scaffold(body: Text('Home'))));
+    final navigator = nav.currentState;
+    wake.connectingCall.value = c;
+    await tester.pump();
+    expect(find.text('Connecting…'), findsOneWidget);
+    expect(find.text('Dev caller'), findsOneWidget);
+    expect(find.text('End call').hitTestable(), findsOneWidget);
+    expect(nav.currentState, same(navigator));
+    wake.connectingCall.value = null;
+    await tester.pump();
+    expect(find.text('Connecting…'), findsNothing);
+    expect(nav.currentState, same(navigator));
+  });
   testWidgets('the control label and circle each invoke the same single action',
       (tester) async {
     final call = _CallController();

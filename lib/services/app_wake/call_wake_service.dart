@@ -64,6 +64,8 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   bool _foreground = true;
   Timer? _quietTimer;
   Call? _pendingCallScreen;
+  final connectingCall = Rxn<WakeCall>();
+  String? _checkingMediaFor;
   String? _voipToken;
   final _voipTokenCtl = StreamController<String>.broadcast();
 
@@ -446,9 +448,46 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
           _log('answered ${c.callId}: ${c.t.summary()}');
           _native('connected', {'uuid': c.uuid, 'call_id': c.callId});
         }
+        if (state.state == CallStateEnum.CONFIRMED && c != null &&
+            identical(connectingCall.value, c) && _checkingMediaFor != c.callId) {
+          _checkingMediaFor = c.callId;
+          unawaited(_waitForAudio(c, call));
+        }
         return;
       default:
         return;
+    }
+  }
+
+  /// Poll only between SIP confirmation and the first inbound audio packet.
+  /// Do not replace sip_ua's own peer-connection or ICE callbacks.
+  Future<void> _waitForAudio(WakeCall c, Call call) async {
+    final watch = Stopwatch()..start();
+    while (identical(connectingCall.value, c)) {
+      final pc = call.peerConnection;
+      var ready = false;
+      if (pc != null) {
+        try {
+          final reports = await pc.getStats();
+          ready = reports.any((r) => hasInboundAudio(r.type, r.values));
+        } catch (_) {
+          // Some WebRTC implementations only expose the connection state.
+          ready = pc.connectionState == rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected ||
+              pc.iceConnectionState == rtc.RTCIceConnectionState.RTCIceConnectionStateConnected ||
+              pc.iceConnectionState == rtc.RTCIceConnectionState.RTCIceConnectionStateCompleted;
+        }
+      }
+      if (!identical(connectingCall.value, c)) return;
+      if (ready) {
+        final now = _now();
+        c.t.mediaReady = now;
+        connectingCall.value = null;
+        ActiveCallService.instance.wakeAudioReady(call, now);
+        _log('media ready ${c.callId}: media +${c.t.since(now)} ms, '
+            '${watch.elapsedMilliseconds} ms after CONFIRMED');
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
     }
   }
 
@@ -530,9 +569,12 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
       _log('Answer for unknown call $uuid');
       return;
     }
-    if (c.accepted) return;
+    if (c.accepted || c.declined || c.nativeEnded) return;
     c.accepted = true;
     c.t.answerTap = _now();
+    if (Platform.isAndroid) {
+      connectingCall.value = c;
+    }
     final call = c.inviteId == null ? null : helper.findCall(c.inviteId!);
     if (call == null) {
       _log('Answer tapped for ${c.callId} before the INVITE; answering when it lands');
@@ -545,6 +587,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     final c = _byUuid(uuid);
     if (c == null) return;
     c.nativeEnded = true;
+    _dismissConnecting(c);
     final call = c.inviteId == null ? null : helper.findCall(c.inviteId!);
     if (c.state == WakeState.answered || c.state == WakeState.answering) {
       _log('hang up ${c.callId} from the system call UI');
@@ -601,6 +644,13 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     try {
       final stream = await rtc.navigator.mediaDevices
           .getUserMedia(<String, dynamic>{'audio': true, 'video': false});
+      if (Platform.isAndroid && (c.nativeEnded || c.declined || c.state == WakeState.ended)) {
+        for (final track in stream.getTracks()) {
+          await track.stop();
+        }
+        await stream.dispose();
+        return;
+      }
       call.answer(helper.buildCallOptions(true), mediaStream: stream);
       _log('answering ${c.callId}');
       _showCallScreen(call);
@@ -627,6 +677,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   void _finish(WakeCall c, String outcome) {
     if (c.state == WakeState.ended && !_calls.containsKey(c.callId)) return;
+    _dismissConnecting(c);
     c.state = WakeState.ended;
     c.t.ended = _now();
     c.t.outcome = outcome;
@@ -671,6 +722,22 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   }
 
   // ─────────────────────── call screen after answer ──────────────────────
+
+  void hangupConnecting(WakeCall c) {
+    if (!identical(connectingCall.value, c)) return;
+    _endNative(c, 'ended');
+    _onNativeEnd(c.uuid, reason: 'user');
+  }
+
+  void _dismissConnecting(WakeCall c) {
+    if (!Platform.isAndroid) return;
+    if (c.inviteId != null && _pendingCallScreen?.id == c.inviteId) _pendingCallScreen = null;
+    if (identical(connectingCall.value, c)) connectingCall.value = null;
+    if (_checkingMediaFor == c.callId) _checkingMediaFor = null;
+  }
+
+  WakeCall? androidWakeFor(String? sipId) =>
+      Platform.isAndroid && sipId != null ? _byInvite(sipId) : null;
 
   void _showCallScreen(Call call) {
     _pendingCallScreen = call;
@@ -815,7 +882,10 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   Future<void> _saveTiming(WakeCall c) async {
     final m = c.t.toJson(c.callId);
-    if (Platform.isAndroid) m['fsi_allowed'] = FullScreenCalls.instance.allowed.value ?? 'unknown';
+    if (Platform.isAndroid) {
+      m['fsi_allowed'] = FullScreenCalls.instance.allowed.value ?? 'unknown';
+      m['media_ms'] = c.t.since(c.t.mediaReady);
+    }
     if (Platform.isIOS && c.t.coldStart) {
       m['firebase_start_ms'] = c.t.since(_iosFirebaseStartedAt);
       m['firebase_ready_ms'] = c.t.since(_iosFirebaseReadyAt);

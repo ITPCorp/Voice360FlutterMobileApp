@@ -82,6 +82,7 @@ class WakeTimings {
   int? invite; // matching INVITE arrived
   int? answerTap; // user tapped Answer on the native UI
   int? answered; // 200 OK sent / session accepted
+  int? mediaReady; // confirmed SIP call with inbound audio on Android
   int? ended;
   String? outcome;
   String? matchedBy;
@@ -122,6 +123,14 @@ class WakeTimings {
   }
 }
 
+bool hasInboundAudio(String type, Map<dynamic, dynamic> values) {
+  if (type != 'inbound-rtp' || (values['kind'] ?? values['mediaType']) != 'audio') {
+    return false;
+  }
+  final packets = values['packetsReceived'];
+  return packets is num && packets > 0;
+}
+
 enum WakeState { ringing, answering, answered, ended }
 
 /// A call the app was woken for.
@@ -146,6 +155,9 @@ class WakeCall {
     t.serverSent = push.sentAtMs;
   }
 
+  String get callerLabel => push.callerName.trim().isNotEmpty
+      ? push.callerName
+      : (push.callerNumber.isEmpty ? 'Caller ID unavailable' : push.callerNumber);
   String get callId => push.callId;
   String get uuid => push.uuid;
   bool get waitingForInvite => inviteId == null && state != WakeState.ended;

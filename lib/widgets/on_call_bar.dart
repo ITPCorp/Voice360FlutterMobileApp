@@ -1,6 +1,10 @@
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:itp_voice/screens/call_screen.dart';
 import 'package:itp_voice/services/active_call_service.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 
 /// Wraps every screen (GetMaterialApp.builder). While a call is active and the
 /// in-call screen is not on top, shows "On call · <name> · mm:ss" above the
@@ -12,6 +16,27 @@ class OnCallBarHost extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final svc = ActiveCallService.instance;
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      return _callBar(context, svc);
+    }
+    // Keep the navigator mounted underneath the connecting screen while a
+    // cold launch restores the session or navigates to the matched SIP call.
+    return Stack(fit: StackFit.expand, children: [
+      _callBar(context, svc),
+      Obx(() {
+        final wake = CallWakeService.instance;
+        final c = wake.connectingCall.value;
+        if (c == null) return const SizedBox.shrink();
+        return BlockSemantics(
+            child: ConnectingCallScreen(
+          caller: c.callerLabel,
+          hangup: () => wake.hangupConnecting(c),
+        ));
+      }),
+    ]);
+  }
+
+  Widget _callBar(BuildContext context, ActiveCallService svc) {
     return Obx(() {
       if (!svc.barVisible) return child;
       final mq = MediaQuery.of(context);

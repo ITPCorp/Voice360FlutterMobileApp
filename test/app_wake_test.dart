@@ -14,6 +14,13 @@ String? Function(String) _headers(Map<String, String> h) =>
     (name) => h[name];
 
 void main() {
+  test('only a received audio RTP packet counts as media', () {
+    expect(hasInboundAudio('inbound-rtp', {'kind': 'audio', 'packetsReceived': 2}), isTrue);
+    expect(hasInboundAudio('inbound-rtp', {'mediaType': 'audio', 'packetsReceived': 1}), isTrue);
+    expect(hasInboundAudio('inbound-rtp', {'kind': 'audio', 'packetsReceived': 0}), isFalse);
+    expect(hasInboundAudio('inbound-rtp', {'kind': 'video', 'packetsReceived': 3}), isFalse);
+    expect(hasInboundAudio('remote-inbound-rtp', {'kind': 'audio', 'packetsReceived': 3}), isFalse);
+  });
   group('WakePush.fromMap', () {
     test('ring with the contract keys', () {
       final p = WakePush.fromMap({

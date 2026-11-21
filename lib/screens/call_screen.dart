@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:itp_voice/controllers/call_screen_controller.dart';
 import 'package:itp_voice/design/v360.dart';
+import 'package:itp_voice/services/app_wake/call_wake_service.dart';
 import 'package:sip_ua/sip_ua.dart';
 
 class CallScreen extends StatelessWidget {
@@ -21,6 +22,8 @@ class CallScreen extends StatelessWidget {
   }
 
   String _peerName() {
+    final wake = CallWakeService.instance.androidWakeFor(con.call?.id);
+    if (wake != null) return wake.callerLabel;
     final id = con.call?.remote_identity ?? '';
     if (id.isEmpty) return 'Caller ID unavailable';
     final m = RegExp(r'"([^"]+)"').firstMatch(id);
@@ -32,37 +35,7 @@ class CallScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      // Android Back leaves this screen and keeps the call: the "On call" bar
-      // on every screen and the ongoing-call notification lead back here.
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF0F172A),
-                Color(0xFF0C4A6E),
-                Color(0xFF075985),
-              ],
-            ),
-          ),
-          child: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) => SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child:
-                      IntrinsicHeight(child: Obx(() => _buildContent(context))),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    return _CallSurface(content: Obx(() => _buildContent(context)));
   }
 
   Widget _buildContent(BuildContext context) {
@@ -218,7 +191,8 @@ class CallScreen extends StatelessWidget {
               ListTile(
                 leading: Icon(_routeIcon(r)),
                 title: Text(_routeLabel(r)),
-                trailing: a.route.value == r ? const Icon(Icons.check_rounded) : null,
+                trailing:
+                    a.route.value == r ? const Icon(Icons.check_rounded) : null,
                 onTap: () {
                   Get.back();
                   a.setRoute(r);
@@ -324,6 +298,83 @@ class CallScreen extends StatelessWidget {
           onTap: () => con.handleHangup(goBack: true),
         ),
       ],
+    );
+  }
+}
+
+/// The wake push identifies the caller even before Flutter has a SIP session.
+class ConnectingCallScreen extends StatelessWidget {
+  const ConnectingCallScreen(
+      {super.key, required this.caller, required this.hangup});
+  final String caller;
+  final VoidCallback hangup;
+
+  @override
+  Widget build(BuildContext context) => _CallSurface(
+          content: Column(children: [
+        const SizedBox(height: V360Spacing.s6),
+        Semantics(
+            liveRegion: true,
+            child: const Text('Connecting…',
+                style: TextStyle(color: Colors.white, fontSize: 16))),
+        const SizedBox(height: V360Spacing.s6),
+        V360Avatar(name: caller, size: 96),
+        const SizedBox(height: V360Spacing.s5),
+        Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(caller,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700))),
+        const Spacer(),
+        _RoundIconButton(
+            icon: Icons.call_end_rounded,
+            color: V360Colors.callDecline,
+            size: 72,
+            label: 'End call',
+            onTap: hangup),
+        const SizedBox(height: V360Spacing.s8),
+      ]));
+}
+
+class _CallSurface extends StatelessWidget {
+  const _CallSurface({required this.content});
+  final Widget content;
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      // Android Back leaves this screen and keeps the call: the "On call" bar
+      // on every screen and the ongoing-call notification lead back here.
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF0F172A),
+                Color(0xFF0C4A6E),
+                Color(0xFF075985),
+              ],
+            ),
+          ),
+          child: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(child: content),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
