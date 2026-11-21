@@ -82,7 +82,7 @@ class WakeTimings {
   int? invite; // matching INVITE arrived
   int? answerTap; // user tapped Answer on the native UI
   int? answered; // 200 OK sent / session accepted
-  int? mediaReady; // confirmed SIP call with inbound audio on Android
+  int? mediaReady; // SIP confirmed and WebRTC media ready on Android
   int? ended;
   String? outcome;
   String? matchedBy;

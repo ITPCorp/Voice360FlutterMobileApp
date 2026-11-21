@@ -459,36 +459,19 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
     }
   }
 
-  /// Poll only between SIP confirmation and the first inbound audio packet.
-  /// Do not replace sip_ua's own peer-connection or ICE callbacks.
   Future<void> _waitForAudio(WakeCall c, Call call) async {
     final watch = Stopwatch()..start();
-    while (identical(connectingCall.value, c)) {
-      final pc = call.peerConnection;
-      var ready = false;
-      if (pc != null) {
-        try {
-          final reports = await pc.getStats();
-          ready = reports.any((r) => hasInboundAudio(r.type, r.values));
-        } catch (_) {
-          // Some WebRTC implementations only expose the connection state.
-          ready = pc.connectionState == rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected ||
-              pc.iceConnectionState == rtc.RTCIceConnectionState.RTCIceConnectionStateConnected ||
-              pc.iceConnectionState == rtc.RTCIceConnectionState.RTCIceConnectionStateCompleted;
-        }
-      }
-      if (!identical(connectingCall.value, c)) return;
-      if (ready) {
-        final now = _now();
-        c.t.mediaReady = now;
-        connectingCall.value = null;
-        ActiveCallService.instance.wakeAudioReady(call, now);
-        _log('media ready ${c.callId}: media +${c.t.since(now)} ms, '
-            '${watch.elapsedMilliseconds} ms after CONFIRMED');
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
+    final signal = await waitForWakeMedia(
+      peer: () => call.peerConnection,
+      waiting: () => identical(connectingCall.value, c),
+    );
+    if (signal == null || !identical(connectingCall.value, c)) return;
+    final now = _now();
+    c.t.mediaReady = now;
+    connectingCall.value = null;
+    ActiveCallService.instance.wakeAudioReady(call, now);
+    _log('media ready ${c.callId}: media +${c.t.since(now)} ms, '
+        '${watch.elapsedMilliseconds} ms after CONFIRMED ($signal)');
   }
 
   @override
@@ -933,4 +916,48 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   }
 
   int _now() => DateTime.now().millisecondsSinceEpoch;
+}
+
+/// Called after SIP confirmation. The plugin caches native transport events.
+/// A slow Android stats request must never delay a ready transport.
+Future<String?> waitForWakeMedia({
+  required rtc.RTCPeerConnection? Function() peer,
+  required bool Function() waiting,
+}) async {
+  rtc.RTCPeerConnection? receivedAudioOn;
+  bool checkingStats = false;
+  Future<void> checkAudio(rtc.RTCPeerConnection pc) async {
+    checkingStats = true;
+    try {
+      final reports = await pc.getStats();
+      if (reports.any((r) => hasInboundAudio(r.type, r.values))) {
+        receivedAudioOn = pc;
+      }
+    } catch (_) {
+      // A closing peer may no longer supply stats.
+    } finally {
+      checkingStats = false;
+    }
+  }
+
+  while (waiting()) {
+    final pc = peer();
+    if (pc != null) {
+      if (identical(receivedAudioOn, pc)) return 'inbound audio';
+      final state = pc.connectionState;
+      if (state == rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+        return 'peer connected';
+      }
+      // Prefer the peer event, which includes DTLS. Some implementations
+      // expose only ICE state.
+      if (state == null &&
+          (pc.iceConnectionState == rtc.RTCIceConnectionState.RTCIceConnectionStateConnected ||
+              pc.iceConnectionState == rtc.RTCIceConnectionState.RTCIceConnectionStateCompleted)) {
+        return 'ICE connected';
+      }
+      if (!checkingStats) unawaited(checkAudio(pc));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+  }
+  return null;
 }

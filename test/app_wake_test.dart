@@ -1,6 +1,21 @@
 // App-wake pure logic: push parsing and matching the INVITE to the woken call.
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
+import 'package:itp_voice/services/app_wake/call_wake_service.dart' show waitForWakeMedia;
 import 'package:itp_voice/services/app_wake/wake_call.dart';
+
+class _MediaPeer extends Fake implements rtc.RTCPeerConnection {
+  @override
+  rtc.RTCPeerConnectionState? connectionState =
+      rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnecting;
+  @override
+  rtc.RTCIceConnectionState? iceConnectionState =
+      rtc.RTCIceConnectionState.RTCIceConnectionStateConnected;
+  final stats = Completer<List<rtc.StatsReport>>();
+  @override
+  Future<List<rtc.StatsReport>> getStats([rtc.MediaStreamTrack? track]) => stats.future;
+}
 
 WakeCall _call(String id, {String caller = '+13055550100', int? at}) => WakeCall(WakePush(
       action: 'ring',
@@ -14,6 +29,35 @@ String? Function(String) _headers(Map<String, String> h) =>
     (name) => h[name];
 
 void main() {
+  testWidgets('a connected peer starts the timer while stats are still pending', (tester) async {
+    final pc = _MediaPeer();
+    String? signal;
+    unawaited(waitForWakeMedia(peer: () => pc, waiting: () => true)
+        .then<void>((value) { signal = value; }));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(signal, isNull); // ICE alone precedes the DTLS handshake on this peer.
+    pc.connectionState = rtc.RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(signal, 'peer connected');
+  });
+
+  testWidgets('inbound audio is enough when the peer event is delayed', (tester) async {
+    final pc = _MediaPeer();
+    final result = waitForWakeMedia(peer: () => pc, waiting: () => true);
+    pc.stats.complete([rtc.StatsReport('rx', 'inbound-rtp', 0, {'kind': 'audio', 'packetsReceived': 1})]);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(await result, 'inbound audio');
+  });
+
+  testWidgets('hanging up ends the wait even when the stats request stalls', (tester) async {
+    final pc = _MediaPeer();
+    var waiting = true;
+    final result = waitForWakeMedia(peer: () => pc, waiting: () => waiting);
+    waiting = false;
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(await result, isNull);
+  });
   test('only a received audio RTP packet counts as media', () {
     expect(hasInboundAudio('inbound-rtp', {'kind': 'audio', 'packetsReceived': 2}), isTrue);
     expect(hasInboundAudio('inbound-rtp', {'mediaType': 'audio', 'packetsReceived': 1}), isTrue);
