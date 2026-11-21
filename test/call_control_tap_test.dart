@@ -40,6 +40,8 @@ void main() {
     expect(find.text('Connecting…'), findsOneWidget);
     expect(find.text('In call'), findsNothing);
     expect(find.text('00:00'), findsNothing);
+    expect(tester.getCenter(find.text('End call')).dx,
+        tester.getCenter(find.byType(Scaffold)).dx);
     await tester.tap(find.text('End call'));
     expect(ended, isTrue);
   });

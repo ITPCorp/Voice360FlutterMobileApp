@@ -311,34 +311,36 @@ class ConnectingCallScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _CallSurface(
-          content: Column(children: [
-        const SizedBox(height: V360Spacing.s6),
-        Semantics(
-            liveRegion: true,
-            child: const Text('Connecting…',
-                style: TextStyle(color: Colors.white, fontSize: 16))),
-        const SizedBox(height: V360Spacing.s6),
-        V360Avatar(name: caller, size: 96),
-        const SizedBox(height: V360Spacing.s5),
-        Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(caller,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700))),
-        const Spacer(),
-        _RoundIconButton(
-            icon: Icons.call_end_rounded,
-            color: V360Colors.callDecline,
-            size: 72,
-            label: 'End call',
-            onTap: hangup),
-        const SizedBox(height: V360Spacing.s8),
-      ]));
+      content: SizedBox(
+          width: double.infinity,
+          child: Column(children: [
+            const SizedBox(height: V360Spacing.s6),
+            Semantics(
+                liveRegion: true,
+                child: const Text('Connecting…',
+                    style: TextStyle(color: Colors.white, fontSize: 16))),
+            const SizedBox(height: V360Spacing.s6),
+            V360Avatar(name: caller, size: 96),
+            const SizedBox(height: V360Spacing.s5),
+            Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(caller,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700))),
+            const Spacer(),
+            _RoundIconButton(
+                icon: Icons.call_end_rounded,
+                color: V360Colors.callDecline,
+                size: 72,
+                label: 'End call',
+                onTap: hangup),
+            const SizedBox(height: V360Spacing.s8),
+          ])));
 }
 
 class _CallSurface extends StatelessWidget {
