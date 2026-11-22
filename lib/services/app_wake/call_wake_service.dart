@@ -200,7 +200,11 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
         break;
       case 'audioRoute':
         // iOS: the audio route changed (CallKit speaker button, headset).
-        unawaited(ActiveCallService.instance.refreshRoute());
+        ActiveCallService.instance.applyAudioRoute(e);
+        break;
+      case 'background':
+        _foreground = false;
+        unawaited(_quietInBackground(e['id'] as int?));
         break;
       case 'audio':
         _log('CallKit audio session ${e['active'] == '1' ? 'active' : 'inactive'}');
@@ -296,10 +300,14 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   /// Start the UA (if it is not running) with the stored app_phone device.
   /// Used by the wake path and by BaseScreenController.
   Future<bool>? _starting;
+  Future<void>? _stopping;
+  Completer<void>? _registrationSettled;
 
   /// Serialized: resume and the home screen can both ask at once, and a second
   /// helper.start() replaces the first UA mid-REGISTER (orphan binding).
   Future<bool> startUa() {
+    final stopping = _stopping;
+    if (stopping != null) return stopping.then((_) => startUa());
     final pending = _starting;
     if (pending != null) return pending;
     final f = _startUa().whenComplete(() => _starting = null);
@@ -339,20 +347,46 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   }
 
   /// Unregister and stop the UA.
-  Future<void> stopUa(String why) async {
+  Future<void> stopUa(String why, {bool background = false}) {
+    final stopping = _stopping;
+    if (stopping != null) return stopping;
+    final operation = _stopUa(why, background).whenComplete(() => _stopping = null);
+    _stopping = operation;
+    return operation;
+  }
+
+  bool get _backgroundIdle => !_foreground && _calls.isEmpty && _activeSip.isEmpty;
+
+  Future<void> _stopUa(String why, bool background) async {
+    final starting = _starting;
+    if (starting != null) await starting;
     if (!_uaRunning && !helper.registered && !helper.connected) return;
+    if (background && !_backgroundIdle) return;
+    if (background && Platform.isIOS && !helper.registered &&
+        (helper.connected || helper.connecting)) {
+      // A REGISTER already in flight can create a binding after socket close.
+      final settled = _registrationSettled = Completer<void>();
+      await settled.future.timeout(const Duration(seconds: 2), onTimeout: () {});
+      _registrationSettled = null;
+      if (!_backgroundIdle) return;
+    }
     _log('stopping UA: $why');
     _uaRunning = false;
     try {
       if (helper.registered) {
-        await helper.unregister(true).timeout(const Duration(seconds: 3));
+        // sip_ua waits for the registrar's final response before completing.
+        await helper.unregister(!Platform.isIOS).timeout(const Duration(seconds: 3));
       }
     } catch (e) {
       _log('unregister failed: $e');
     }
-    try {
-      helper.stop();
-    } catch (_) {}
+    // An INVITE or resume can arrive while the un-REGISTER is on the wire.
+    if (background && !_backgroundIdle && helper.connected) {
+      _uaRunning = true;
+      helper.register();
+      return;
+    }
+    helper.stop();
   }
 
   Future<void> _ensureRegistered(WakeCall c) async {
@@ -396,6 +430,8 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   void registrationStateChanged(RegistrationState state) {
     final now = _now();
     if (state.state != RegistrationStateEnum.NONE) {
+      final settled = _registrationSettled;
+      if (settled != null && !settled.isCompleted) settled.complete();
       final w = _wakeRegistered;
       if (w != null && !w.isCompleted) w.complete();
     }
@@ -406,6 +442,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
           _log('REGISTER 200 for ${c.callId} at +${now - c.t.pushReceived} ms');
         }
       }
+      if (Platform.isIOS && _backgroundIdle) _maybeGoQuiet();
     } else if (state.state == RegistrationStateEnum.REGISTRATION_FAILED) {
       _log('REGISTER failed: ${state.cause}');
     }
@@ -568,7 +605,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
 
   void _onNativeEnd(String uuid, {required String reason}) {
     final c = _byUuid(uuid);
-    if (c == null) return;
+    if (c == null || c.declined) return;
     c.nativeEnded = true;
     _dismissConnecting(c);
     final call = c.inviteId == null ? null : helper.findCall(c.inviteId!);
@@ -659,7 +696,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   // ─────────────────────────── bookkeeping ──────────────────────────────
 
   void _finish(WakeCall c, String outcome) {
-    if (c.state == WakeState.ended && !_calls.containsKey(c.callId)) return;
+    if (!identical(_calls[c.callId], c)) return;
     _dismissConnecting(c);
     c.state = WakeState.ended;
     c.t.ended = _now();
@@ -758,7 +795,7 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
         unawaited(_checkFullScreenCalls());
         _quietTimer?.cancel();
         _quietTimer = null;
-            if (!_uaRunning && _signedInUi()) {
+        if ((!_uaRunning || _stopping != null) && _signedInUi()) {
           unawaited(startUa());
         }
         flushCallScreen();
@@ -783,30 +820,38 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   void _maybeGoQuiet() {
     // Real registration state, not only our flag: whatever started the UA, a
     // backgrounded app with no call must not stay registered.
-    if (_foreground) return;
-    if (!_uaRunning && !helper.registered && !helper.connected) return;
+    if (_foreground || _stopping != null) return;
+    if (_starting == null && !_uaRunning && !helper.registered && !helper.connected) return;
     if (_calls.isNotEmpty || _activeSip.isNotEmpty) {
       _log('staying registered in the background: '
           '${_calls.length} woken call(s), ${_activeSip.length} SIP call(s)');
       return;
     }
     _quietTimer?.cancel();
-    // A short grace so a permission dialog or the full-screen call activity
-    // covering the app does not drop the registration.
-    _quietTimer = Timer(const Duration(milliseconds: 1500), () async {
-      _quietTimer = null;
-      if (_foreground || _calls.isNotEmpty || _activeSip.isNotEmpty) return;
-      int? bg;
-      try {
-        bg = await _channel.invokeMethod<int>('beginBackground');
-      } catch (_) {}
-      await stopUa('app in background, no call');
-      if (bg != null) {
+    if (Platform.isIOS) {
+      unawaited(_quietInBackground(null));
+    } else {
+      _quietTimer = Timer(const Duration(milliseconds: 1500), () {
+        _quietTimer = null;
+        if (_backgroundIdle) unawaited(stopUa('app in background, no call', background: true));
+      });
+    }
+  }
+
+  Future<void> _quietInBackground(int? task) async {
+    try {
+      if (!_backgroundIdle) return;
+      if (task == null) {
         try {
-          await _channel.invokeMethod('endBackground', {'id': bg});
-        } catch (_) {}
+          task = await _channel.invokeMethod<int>('beginBackground');
+        } catch (e) {
+          _log('background grant unavailable: $e');
+        }
       }
-    });
+      if (_backgroundIdle) await stopUa('app in background, no call', background: true);
+    } finally {
+      if (task != null) _native('endBackground', {'id': task});
+    }
   }
 
   /// Logout: drop everything.
@@ -851,16 +896,18 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   Future<void> _loadTimings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_timingsKey) ?? const [];
-      recentTimings.assignAll(list.map((s) {
-        try {
-          final m = jsonDecode(s) as Map<String, dynamic>;
-          return _timingLine(m);
-        } catch (_) {
-          return s;
-        }
-      }));
+      _showTimings(uniqueTimingRows(prefs.getStringList(_timingsKey) ?? const []));
     } catch (_) {}
+  }
+
+  void _showTimings(List<String> rows) {
+    recentTimings.assignAll(rows.map((line) {
+      try {
+        return _timingLine(jsonDecode(line) as Map<String, dynamic>);
+      } catch (_) {
+        return line;
+      }
+    }));
   }
 
   Future<void> _saveTiming(WakeCall c) async {
@@ -873,20 +920,18 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
       m['firebase_start_ms'] = c.t.since(_iosFirebaseStartedAt);
       m['firebase_ready_ms'] = c.t.since(_iosFirebaseReadyAt);
     }
-    recentTimings.insert(0, _timingLine(m));
-    if (recentTimings.length > 20) recentTimings.removeRange(20, recentTimings.length);
     try {
       final prefs = await SharedPreferences.getInstance();
-      final list = prefs.getStringList(_timingsKey) ?? <String>[];
-      list.insert(0, jsonEncode(m));
-      await prefs.setStringList(_timingsKey, list.take(20).toList());
+      final rows = uniqueTimingRows([jsonEncode(m), ...?prefs.getStringList(_timingsKey)]);
+      _showTimings(rows);
+      await prefs.setStringList(_timingsKey, rows);
     } catch (_) {}
   }
 
   /// Raw JSON rows (newest first) for copying off the phone.
   Future<List<String>> timingRows() async {
     final prefs = await SharedPreferences.getInstance();
-    final rows = prefs.getStringList(_timingsKey) ?? const <String>[];
+    final rows = uniqueTimingRows(prefs.getStringList(_timingsKey) ?? const []);
     if (!Platform.isAndroid) return rows;
     await FullScreenCalls.instance.check();
     if (rows.isEmpty) {
@@ -916,6 +961,20 @@ class CallWakeService with WidgetsBindingObserver implements SipUaHelperListener
   }
 
   int _now() => DateTime.now().millisecondsSinceEpoch;
+}
+
+/// Newest result per wake call, including history written before build 123.
+List<String> uniqueTimingRows(Iterable<String> lines) {
+  final seen = <String>{};
+  return lines.where((line) {
+    try {
+      final row = jsonDecode(line);
+      final id = row is Map ? row['call_id'] : null;
+      return id is! String || id.isEmpty || seen.add(id);
+    } on FormatException {
+      return true;
+    }
+  }).take(20).toList();
 }
 
 /// Called after SIP confirmation. The plugin caches native transport events.

@@ -2,7 +2,7 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
-import 'package:itp_voice/services/app_wake/call_wake_service.dart' show waitForWakeMedia;
+import 'package:itp_voice/services/app_wake/call_wake_service.dart' show uniqueTimingRows, waitForWakeMedia;
 import 'package:itp_voice/services/app_wake/wake_call.dart';
 
 class _MediaPeer extends Fake implements rtc.RTCPeerConnection {
@@ -29,6 +29,12 @@ String? Function(String) _headers(Map<String, String> h) =>
     (name) => h[name];
 
 void main() {
+  test('decline and end callbacks leave one timing per call in older histories', () {
+    const first = '{"call_id":"one","outcome":"declined"}';
+    const duplicate = '{"call_id":"one","outcome":"declined before INVITE"}';
+    const second = '{"call_id":"two","outcome":"declined"}';
+    expect(uniqueTimingRows([first, second, duplicate, 'legacy']), [first, second, 'legacy']);
+  });
   testWidgets('a connected peer starts the timer while stats are still pending', (tester) async {
     final pc = _MediaPeer();
     String? signal;

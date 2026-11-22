@@ -132,6 +132,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
 
   private let provider: CXProvider
   private var channel: FlutterMethodChannel?
+  private var backgroundTasks = Set<UIBackgroundTaskIdentifier>()
   private var dartReady = false
   private var queue: [[String: Any]] = []
   private var calls: [String: Entry] = [:]  // call_id -> entry
@@ -159,7 +160,15 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     NotificationCenter.default.addObserver(
       forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
     ) { [weak self] _ in
-      self?.send(["event": "audioRoute"])
+      self?.publishAudioRoute()
+    }
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      guard let self = self, self.dartReady else { return }
+      // Take the grant synchronously, before UIKit can suspend the Flutter engine.
+      let task = self.beginBackground()
+      self.send(["event": "background", "id": task.rawValue])
     }
   }
 
@@ -203,27 +212,47 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     case "audioRoute":
       result(AppWakeCalls.audioRouteState())
     case "setAudioRoute":
-      AppWakeCalls.setAudioRoute(args["route"] as? String ?? "earpiece")
-      result(true)
+      do {
+        try AppWakeCalls.setAudioRoute(args["route"] as? String ?? "")
+        result(AppWakeCalls.audioRouteState())
+      } catch {
+        result(FlutterError(code: "audio_route", message: error.localizedDescription, details: nil))
+      }
     case "connected", "callOngoing", "callEnded":
       // callOngoing/callEnded drive Android's ongoing-call notification. On
       // iOS, CallKit (woken calls) and the green status-bar pill (any call
       // using the mic) bring the app back; Dart then opens the in-call screen.
       result(nil)
     case "beginBackground":
-      var id = UIBackgroundTaskIdentifier.invalid
-      id = UIApplication.shared.beginBackgroundTask(withName: "sip-unregister") {
-        UIApplication.shared.endBackgroundTask(id)
-      }
-      result(id.rawValue)
+      result(beginBackground().rawValue)
     case "endBackground":
       if let raw = args["id"] as? Int {
-        UIApplication.shared.endBackgroundTask(UIBackgroundTaskIdentifier(rawValue: raw))
+        endBackground(UIBackgroundTaskIdentifier(rawValue: raw))
       }
       result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }
+  }
+
+  private func beginBackground() -> UIBackgroundTaskIdentifier {
+    var id = UIBackgroundTaskIdentifier.invalid
+    id = UIApplication.shared.beginBackgroundTask(withName: "sip-unregister") { [weak self] in
+      self?.endBackground(id)
+    }
+    if id != .invalid { backgroundTasks.insert(id) }
+    return id
+  }
+
+  private func endBackground(_ id: UIBackgroundTaskIdentifier) {
+    if backgroundTasks.remove(id) != nil { UIApplication.shared.endBackgroundTask(id) }
+  }
+
+  private func publishAudioRoute() {
+    guard dartReady else { return }
+    var event = AppWakeCalls.audioRouteState()
+    event["event"] = "audioRoute"
+    send(event)
   }
 
   private func send(_ event: [String: Any]) {
@@ -249,13 +278,15 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     case .builtInReceiver: return "earpiece"
     case .bluetoothHFP, .bluetoothA2DP, .bluetoothLE, .carAudio: return "bluetooth"
     case .headphones, .headsetMic, .usbAudio, .lineOut: return "wired"
-    default: return "earpiece"
+    default: return "external"
     }
   }
 
+  private static var routeSequence = 0
+
   static func audioRouteState() -> [String: Any] {
     let session = AVAudioSession.sharedInstance()
-    let out = session.currentRoute.outputs.first
+    let outputs = session.currentRoute.outputs.map { routeName($0.portType) }
     var available = ["earpiece", "speaker"]
     var btName: String? = nil
     for input in session.availableInputs ?? [] {
@@ -263,45 +294,38 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
       if name == "bluetooth" { btName = input.portName }
       if (name == "bluetooth" || name == "wired") && !available.contains(name) { available.append(name) }
     }
-    return [
-      "route": out.map { routeName($0.portType) } ?? "earpiece",
+    routeSequence += 1
+    var state: [String: Any] = [
+      "sequence": routeSequence,
       "available": available,
       "via": "avaudiosession",
-      "bluetooth_name": btName as Any,
     ]
+    state["bluetooth_name"] = btName
+    state["route"] = outputs.contains("speaker") ? "speaker" : outputs.first
+    return state
   }
 
   /// Works with and without CallKit: the CallKit-activated session is the
   /// same AVAudioSession, so the override goes to the live call.
-  static func setAudioRoute(_ route: String) {
+  static func setAudioRoute(_ requested: String) throws {
     let session = AVAudioSession.sharedInstance()
-    do {
-      if !session.categoryOptions.contains(.allowBluetooth) {
-        try? session.setCategory(.playAndRecord, mode: .voiceChat,
-                                 options: [.allowBluetooth, .allowBluetoothA2DP])
-      }
-      switch route {
-      case "speaker":
-        try session.overrideOutputAudioPort(.speaker)
-      case "bluetooth":
-        try session.overrideOutputAudioPort(.none)
-        if let bt = session.availableInputs?.first(where: { routeName($0.portType) == "bluetooth" }) {
-          try session.setPreferredInput(bt)
-        }
-      default:
-        try session.overrideOutputAudioPort(.none)
-        let builtIn = session.availableInputs?.first(where: { $0.portType == .builtInMic })
-        if route == "wired" {
-          if let w = session.availableInputs?.first(where: { routeName($0.portType) == "wired" }) {
-            try session.setPreferredInput(w)
-          }
-        } else if let mic = builtIn {
-          try session.setPreferredInput(mic)
-        }
-      }
-    } catch {
-      NSLog("[AppWake] audio route \(route) failed: \(error)")
+    let route: String
+    if requested == "toggleSpeaker" {
+      let outputs = session.currentRoute.outputs
+      guard !outputs.isEmpty else { return }
+      route = outputs.contains(where: { $0.portType == .builtInSpeaker }) ? "automatic" : "speaker"
+    } else {
+      route = requested
     }
+    if route == "speaker" {
+      try session.overrideOutputAudioPort(.speaker)
+      return
+    }
+    try session.overrideOutputAudioPort(.none)
+    let input = session.availableInputs?.first {
+      route == "earpiece" ? $0.portType == .builtInMic : routeName($0.portType) == route
+    }
+    try session.setPreferredInput(input)
   }
 
   // MARK: Pushes
@@ -494,6 +518,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     #if canImport(WebRTC)
     RTCAudioSession.sharedInstance().audioSessionDidActivate(audioSession)
     #endif
+    publishAudioRoute()
     send(["event": "audio", "active": "1"])
   }
 

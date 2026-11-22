@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:get/get.dart';
 import 'package:itp_voice/helpers/config.dart';
 import 'package:sip_ua/sip_ua.dart';
@@ -45,7 +47,7 @@ UaSettings buildUaSettings({
   settings.userAgent = 'Flutter SIP Client v1.0';
   settings.dtmfMode = DtmfMode.INFO;
   settings.register = true;
-  settings.register_expires = kRegisterExpires;
+  settings.register_expires = Platform.isIOS ? 60 : kRegisterExpires;
   settings.transportType = TransportType.WS;
   settings.webSocketSettings.transport_scheme = "wss";
   settings.registrarServer = "sip:$realm";

@@ -44,6 +44,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   final RxList<String> routes = <String>['earpiece', 'speaker'].obs;
   final RxnString bluetoothName = RxnString();
   Timer? _routePoll;
+  int _lastRouteSequence = 0;
   final RxBool hold = false.obs;
   final RxString elapsed = ''.obs;
   final RxString currentRoute = ''.obs;
@@ -256,7 +257,13 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     }
   }
 
-  void toggleSpeaker() => setSpeaker(route.value != 'speaker');
+  void toggleSpeaker() {
+    if (Platform.isIOS) {
+      unawaited(setRoute('toggleSpeaker'));
+    } else {
+      setSpeaker(route.value != 'speaker');
+    }
+  }
 
   /// More than earpiece + speaker available: the Speaker button opens a picker.
   bool get hasRouteChoice => routes.contains('bluetooth') || routes.contains('wired');
@@ -274,12 +281,14 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   Future<void> setRoute(String r) async {
     if (call.value == null) return;
     _log('route -> $r');
-    route.value = r; // optimistic; corrected by refreshRoute below
-    speaker.value = r == 'speaker';
     try {
       if (Platform.isIOS) {
-        await _channel.invokeMethod('setAudioRoute', {'route': r});
+        final snapshot = await _channel.invokeMapMethod('setAudioRoute', {'route': r});
+        if (snapshot != null) applyAudioRoute(snapshot);
+        return;
       } else if (Platform.isAndroid) {
+        route.value = r;
+        speaker.value = r == 'speaker';
         final viaTelecom = await _channel
             .invokeMethod<bool>('setAudioRoute', {'uuid': _nativeUuid, 'route': r});
         if (viaTelecom != true) {
@@ -314,16 +323,29 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     if (call.value == null || kIsWeb) return;
     try {
       final m = await _channel.invokeMethod<dynamic>('audioRoute', {'uuid': _nativeUuid});
-      if (m is! Map) return;
-      final r = (m['route'] ?? 'earpiece').toString();
-      final av = (m['available'] as List?)?.map((e) => e.toString()).toList();
-      final changed = r != route.value;
-      route.value = r;
-      speaker.value = r == 'speaker';
-      if (av != null && av.isNotEmpty) routes.assignAll(av);
-      bluetoothName.value = m['bluetooth_name']?.toString();
-      if (changed) _pushNotification();
+      if (m is Map) applyAudioRoute(m);
     } catch (_) {}
+  }
+
+  void applyAudioRoute(Map snapshot) {
+    if (!hasCall) return;
+    // A pending method reply can arrive after a newer native route event.
+    final sequence = snapshot['sequence'];
+    if (sequence is int) {
+      if (sequence <= _lastRouteSequence) return;
+      _lastRouteSequence = sequence;
+    }
+    final output = snapshot['route'];
+    if (output is! String) return; // No output during session activation.
+    final changed = output != route.value;
+    route.value = output;
+    speaker.value = output == 'speaker';
+    final available = snapshot['available'];
+    if (available is List && available.isNotEmpty) {
+      routes.assignAll(available.whereType<String>());
+    }
+    bluetoothName.value = snapshot['bluetooth_name']?.toString();
+    if (changed) _pushNotification();
   }
 
   void _syncProximity() {
@@ -341,6 +363,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
   void _startRoutePoll() {
     _routePoll?.cancel();
     unawaited(refreshRoute());
+    if (Platform.isIOS) return; // AVAudioSession publishes route changes.
     _routePoll = Timer.periodic(const Duration(seconds: 2), (_) => refreshRoute());
   }
 
@@ -419,6 +442,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     // iOS: the green call pill, the status bar and CallKit's app button all
     // just bring the app forward; show the call when that happens.
     if (s == AppLifecycleState.resumed && Platform.isIOS && hasCall) {
+      unawaited(refreshRoute());
       Future.delayed(const Duration(milliseconds: 300), openCallScreen);
     }
   }
