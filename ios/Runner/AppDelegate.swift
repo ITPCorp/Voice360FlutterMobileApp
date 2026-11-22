@@ -159,8 +159,8 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     // plugged in or connected) update the in-call screen's Speaker button.
     NotificationCenter.default.addObserver(
       forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
-    ) { [weak self] _ in
-      self?.publishAudioRoute()
+    ) { [weak self] notification in
+      self?.routeChanged(notification)
     }
     NotificationCenter.default.addObserver(
       forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
@@ -210,15 +210,23 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
       markEnded(callId)
       result(nil)
     case "audioRoute":
-      result(AppWakeCalls.audioRouteState())
+      result(audioRouteState())
     case "setAudioRoute":
       do {
-        try AppWakeCalls.setAudioRoute(args["route"] as? String ?? "")
-        result(AppWakeCalls.audioRouteState())
+        try setAudioRoute(args["route"] as? String ?? "")
+        result(audioRouteState())
       } catch {
         result(FlutterError(code: "audio_route", message: error.localizedDescription, details: nil))
       }
-    case "connected", "callOngoing", "callEnded":
+    case "routeTrace":
+      result(routeTrace)
+    case "audioCallStarted":
+      startAudioCall()
+      result(nil)
+    case "callEnded":
+      finishAudioCall()
+      result(nil)
+    case "connected", "callOngoing":
       // callOngoing/callEnded drive Android's ongoing-call notification. On
       // iOS, CallKit (woken calls) and the green status-bar pill (any call
       // using the mic) bring the app back; Dart then opens the in-call screen.
@@ -250,7 +258,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
 
   private func publishAudioRoute() {
     guard dartReady else { return }
-    var event = AppWakeCalls.audioRouteState()
+    var event = audioRouteState()
     event["event"] = "audioRoute"
     send(event)
   }
@@ -282,50 +290,191 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     }
   }
 
-  private static var routeSequence = 0
+  private var audioCallActive = false
 
-  static func audioRouteState() -> [String: Any] {
+  private func startAudioCall() {
+    guard !audioCallActive else { return } // CallKit Answer can precede the SIP INVITE.
+    audioCallActive = true
+    intentRevision += 1
+  }
+
+  private func finishAudioCall() {
+    audioCallActive = false
+    intentRevision += 1
+    speakerIntent.followDevice()
+    repairTime = nil
+    expectedOverrides.removeAll()
+  }
+
+  private var routeSequence = 0
+  private var intentRevision = 0
+  private var speakerIntent = SpeakerIntent()
+  private var applyingOverride = false
+  private var repairTime: TimeInterval?
+  private var expectedOverrides: [(previous: String?, until: TimeInterval)] = []
+  private var routeTrace: [[String: Any]] = []
+  private var traceSequence = 0
+  private let traceClock: ISO8601DateFormatter = {
+    let clock = ISO8601DateFormatter()
+    clock.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return clock
+  }()
+
+  private func outputName(_ route: AVAudioSessionRouteDescription?) -> String? {
+    let ports = route?.outputs.map { Self.routeName($0.portType) } ?? []
+    return ports.contains("speaker") ? "speaker" : ports.first
+  }
+
+  private func audioRouteState() -> [String: Any] {
     let session = AVAudioSession.sharedInstance()
-    let outputs = session.currentRoute.outputs.map { routeName($0.portType) }
     var available = ["earpiece", "speaker"]
-    var btName: String? = nil
+    var btName: String?
     for input in session.availableInputs ?? [] {
-      let name = routeName(input.portType)
+      let name = Self.routeName(input.portType)
       if name == "bluetooth" { btName = input.portName }
       if (name == "bluetooth" || name == "wired") && !available.contains(name) { available.append(name) }
     }
     routeSequence += 1
-    var state: [String: Any] = [
-      "sequence": routeSequence,
-      "available": available,
-      "via": "avaudiosession",
-    ]
+    var state: [String: Any] = ["sequence": routeSequence, "available": available, "via": "avaudiosession"]
     state["bluetooth_name"] = btName
-    state["route"] = outputs.contains("speaker") ? "speaker" : outputs.first
+    state["route"] = speakerIntent.displayRoute(outputName(session.currentRoute))
     return state
   }
 
-  /// Works with and without CallKit: the CallKit-activated session is the
-  /// same AVAudioSession, so the override goes to the live call.
-  static func setAudioRoute(_ requested: String) throws {
+  // One row per tap/notification. Fill in the settled ports on the same row
+  // without changing event order, even when several notifications overlap.
+  private func trace(_ reason: String, previous: String? = nil) -> Int {
+    traceSequence += 1
+    var row: [String: Any] = ["sequence": traceSequence, "time": traceClock.string(from: Date()),
+                              "reason": reason, "override": "unchanged"]
+    row["previous"] = previous
+    routeTrace.append(row)
+    if routeTrace.count > 30 { routeTrace.removeFirst() }
+    return traceSequence
+  }
+
+  private func sample(_ id: Int) {
+    guard let i = routeTrace.firstIndex(where: { $0["sequence"] as? Int == id }) else { return }
+    let s = AVAudioSession.sharedInstance()
+    routeTrace[i]["category"] = s.category.rawValue
+    routeTrace[i]["mode"] = s.mode.rawValue
+    routeTrace[i]["outputs"] = s.currentRoute.outputs.map {
+      ["portType": $0.portType.rawValue, "portName": $0.portName]
+    }
+    routeTrace[i]["speakerWanted"] = speakerIntent.speakerWanted
+  }
+
+  private func applyOverride(_ on: Bool, event: Int) throws {
     let session = AVAudioSession.sharedInstance()
-    let route: String
-    if requested == "toggleSpeaker" {
-      let outputs = session.currentRoute.outputs
-      guard !outputs.isEmpty else { return }
-      route = outputs.contains(where: { $0.portType == .builtInSpeaker }) ? "automatic" : "speaker"
-    } else {
-      route = requested
+    let now = ProcessInfo.processInfo.systemUptime
+    expectedOverrides.removeAll { $0.until < now }
+    expectedOverrides.append((outputName(session.currentRoute), now + 1))
+    applyingOverride = true
+    defer { applyingOverride = false }
+    if let i = routeTrace.firstIndex(where: { $0["sequence"] as? Int == event }) { routeTrace[i]["override"] = on ? "speaker" : "none" }
+    do {
+      try session.overrideOutputAudioPort(on ? .speaker : .none)
+    } catch {
+      expectedOverrides.removeAll()
+      if let i = routeTrace.firstIndex(where: { $0["sequence"] as? Int == event }) {
+        routeTrace[i]["error"] = error.localizedDescription
+      }
+      throw error
     }
-    if route == "speaker" {
-      try session.overrideOutputAudioPort(.speaker)
-      return
+  }
+
+  private func setAudioRoute(_ requested: String) throws {
+    let on = requested == "toggleSpeaker" ? !speakerIntent.speakerWanted : requested == "speaker"
+    let id = trace("app." + requested)
+    intentRevision += 1
+    repairTime = nil
+    let before = speakerIntent
+    speakerIntent.select(on)
+    defer { publishAfterSettling(id) }
+    do {
+      try applyOverride(on, event: id)
+    } catch {
+      speakerIntent = before
+      throw error
     }
-    try session.overrideOutputAudioPort(.none)
-    let input = session.availableInputs?.first {
-      route == "earpiece" ? $0.portType == .builtInMic : routeName($0.portType) == route
+    if !on {
+      let session = AVAudioSession.sharedInstance()
+      let input = session.availableInputs?.first {
+        requested == "earpiece" ? $0.portType == .builtInMic : Self.routeName($0.portType) == requested
+      }
+      try session.setPreferredInput(input)
     }
-    try session.setPreferredInput(input)
+  }
+
+  private func publishAfterSettling(_ id: Int) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+      self.sample(id)
+      self.publishAudioRoute()
+    }
+  }
+
+  private func routeChanged(_ notification: Notification) {
+    let info = notification.userInfo
+    let raw = info?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+    let reason: String
+    switch AVAudioSession.RouteChangeReason(rawValue: raw) {
+    case .categoryChange: reason = "categoryChange"
+    case .override: reason = "override"
+    case .routeConfigurationChange: reason = "routeConfigurationChange"
+    case .newDeviceAvailable: reason = "newDeviceAvailable"
+    case .oldDeviceUnavailable: reason = "oldDeviceUnavailable"
+    case .wakeFromSleep: reason = "wakeFromSleep"
+    case .noSuitableRouteForCategory: reason = "noSuitableRouteForCategory"
+    default: reason = "unknown(" + String(raw) + ")"
+    }
+    let previous = outputName(info?[AVAudioSessionRouteChangePreviousRouteKey] as? AVAudioSessionRouteDescription)
+    var own = applyingOverride
+    let now = ProcessInfo.processInfo.systemUptime
+    if (reason == "categoryChange" || reason == "routeConfigurationChange"),
+       let repairTime = repairTime, now - repairTime < 0.25 {
+      own = true // A repair can itself reconfigure the session.
+    }
+    if reason == "override" {
+      expectedOverrides.removeAll { $0.until < now }
+      if let i = expectedOverrides.firstIndex(where: { $0.previous == previous }) {
+        expectedOverrides.remove(at: i)
+        own = true
+      }
+      if !own && UIApplication.shared.applicationState != .active { intentRevision += 1 }
+    }
+    if reason == "newDeviceAvailable" || reason == "oldDeviceUnavailable" {
+      intentRevision += 1
+      speakerIntent.followDevice()
+      expectedOverrides.removeAll()
+    }
+    settle(reason, previous: previous, own: own)
+  }
+
+  private func settle(_ reason: String, previous: String? = nil, own: Bool = false) {
+    let id = trace(reason, previous: previous)
+    let revision = intentRevision
+    let systemControls = UIApplication.shared.applicationState != .active
+    routeTrace[routeTrace.count - 1]["systemControls"] = systemControls
+    routeTrace[routeTrace.count - 1]["ownOverride"] = own
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(250)) {
+      if self.audioCallActive && revision == self.intentRevision {
+        let output = self.outputName(AVAudioSession.sharedInstance().currentRoute)
+        if self.speakerIntent.settle(reason: reason, previous: previous, output: output,
+                                     ownOverride: own, systemControls: systemControls) {
+          if let i = self.routeTrace.firstIndex(where: { $0["sequence"] as? Int == id }) {
+            self.routeTrace[i]["outputsBeforeRepair"] = AVAudioSession.sharedInstance().currentRoute.outputs.map {
+              ["portType": $0.portType.rawValue, "portName": $0.portName]
+            }
+          }
+          self.repairTime = ProcessInfo.processInfo.systemUptime
+          try? self.applyOverride(true, event: id)
+          self.publishAfterSettling(id)
+          return
+        }
+      }
+      self.sample(id)
+      self.publishAudioRoute()
+    }
   }
 
   // MARK: Pushes
@@ -448,6 +597,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
 
   private func endCall(_ callId: String, reason: String) {
     guard let e = calls[callId] else { markEnded(callId); return }
+    if e.state == .answered { finishAudioCall() }
     if e.state != .ended {
       provider.reportCall(with: e.uuid, endedAt: Date(), reason: endedReason(reason))
     }
@@ -476,6 +626,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
   // MARK: CXProviderDelegate
 
   func providerDidReset(_ provider: CXProvider) {
+    finishAudioCall()
     NSLog("[AppWake] provider reset")
     for (id, e) in calls where e.state != .ended {
       send(["event": "end", "uuid": e.uuid.uuidString])
@@ -489,6 +640,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
       action.fail()
       return
     }
+    startAudioCall()
     calls[id]?.state = .answered
     let session = AVAudioSession.sharedInstance()
     try? session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
@@ -498,6 +650,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
 
   func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
     if let id = callId(for: action.callUUID) {
+      if calls[id]?.state == .answered { finishAudioCall() }
       calls[id]?.state = .ended
       markEnded(id)
     }
@@ -518,7 +671,7 @@ final class AppWakeCalls: NSObject, CXProviderDelegate {
     #if canImport(WebRTC)
     RTCAudioSession.sharedInstance().audioSessionDidActivate(audioSession)
     #endif
-    publishAudioRoute()
+    settle("didActivate")
     send(["event": "audio", "active": "1"])
   }
 

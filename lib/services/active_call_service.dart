@@ -144,6 +144,9 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
 
   void _start(Call c) {
     _ending = false;
+    if (Platform.isIOS) {
+      unawaited(_channel.invokeMethod<void>('audioCallStarted'));
+    }
     call.value = c;
     state.value = CallStateEnum.CALL_INITIATION;
     connectedAt = null;
@@ -182,7 +185,7 @@ class ActiveCallService with WidgetsBindingObserver implements SipUaHelperListen
     remoteStream = null;
     muted.value = false;
     speaker.value = false;
-    if (_notifShown) {
+    if (_notifShown || Platform.isIOS) {
       _notifShown = false;
       _channel.invokeMethod('callEnded').catchError((Object _) => null);
     }

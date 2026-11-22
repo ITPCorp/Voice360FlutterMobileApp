@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io' show Platform;
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -28,7 +31,22 @@ class DebugScreen extends StatefulWidget {
 }
 
 class _DebugScreenState extends State<DebugScreen> {
+  static const _wake = MethodChannel('voice360/app_wake');
+  List<String> _routeEvents = [];
   bool _loading = true;
+
+  Future<List<String>> _readRouteTrace() async {
+    final rows = await _wake.invokeListMethod<dynamic>('routeTrace') ?? [];
+    return rows.map(jsonEncode).toList();
+  }
+
+  Future<void> _copyRouteTrace() async {
+    final rows = await _readRouteTrace();
+    await Clipboard.setData(ClipboardData(text: rows.join('\n')));
+    if (!mounted) return;
+    setState(() => _routeEvents = rows);
+    CustomToast.showToast('Route trace copied (${rows.length})', false);
+  }
   String? _firebaseAppName;
   String? _firebaseAppOptionsAppId;
   String? _fcmCached;
@@ -98,7 +116,10 @@ class _DebugScreenState extends State<DebugScreen> {
       backendError = e.toString();
     }
 
+    final routeEvents = Platform.isIOS ? await _readRouteTrace() : <String>[];
+    if (!mounted) return;
     setState(() {
+      _routeEvents = routeEvents;
       _firebaseAppName = firebaseAppName;
       _firebaseAppOptionsAppId = firebaseAppOptionsAppId;
       _fcmCached = locator<PushService>().cachedToken;
@@ -251,6 +272,20 @@ class _DebugScreenState extends State<DebugScreen> {
                     ),
                   ]),
                 ]),
+                if (Platform.isIOS)
+                  _section('Audio route trace', [
+                    if (_routeEvents.isEmpty) const Text('No route events yet.'),
+                    for (final event in _routeEvents.reversed)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: SelectableText(event, style: Theme.of(context).textTheme.bodySmall),
+                      ),
+                    TextButton.icon(
+                      onPressed: _copyRouteTrace,
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text('Copy route trace'),
+                    ),
+                  ]),
                 _section('Global notification socket', [
                   _kv('connected', _socketConnected.toString()),
                   _kv('endpoint', 'wss://ws.cloud.itp360.com/ws'),
