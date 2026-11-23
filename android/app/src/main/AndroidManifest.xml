@@ -37,6 +37,7 @@
 <uses-permission android:name="android.permission.MANAGE_OWN_CALLS"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" tools:node="remove" />
 <uses-permission android:name="android.permission.TURN_SCREEN_ON"/>
 <uses-permission android:name="android.permission.VIBRATE"/>
 <application android:enableOnBackInvokedCallback="true" android:label="VOICE360" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:requestLegacyExternalStorage="true">
@@ -88,6 +89,12 @@
         <data android:scheme="itpvoice" />
     </intent-filter>
 </activity>
+
+<!-- Voice360 calls use audio only. Keep the other CallKit service attributes. -->
+<service
+    android:name="com.hiennv.flutter_callkit_incoming.CallkitNotificationService"
+    android:foregroundServiceType="phoneCall|microphone"
+    tools:replace="android:foregroundServiceType" />
 
 <!-- App-wake: our FCM service handles voice360_call data messages natively
      (AppWake.kt) and passes everything else to firebase_messaging. Only one
