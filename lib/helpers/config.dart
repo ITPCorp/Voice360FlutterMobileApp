@@ -13,17 +13,17 @@ class Config {
 
   static String BASE_URL_CRM = isDev
       ? "https://api.itpscorp.com/dev/portal/crm"
-      : "https://api.itpscorp.com/portal/crm";
+      : "https://api.itp360.com/portal/crm";
 
   /// Prefix for other /portal/ services (360 contacts).
   static String BASE_URL_PORTAL = isDev
       ? "https://api.itpscorp.com/dev/portal/"
-      : "https://api.itpscorp.com/portal/";
+      : "https://api.itp360.com/portal/";
 
   static String BASE_URL_DEV = "https://api.itpscorp.com/dev";
   static String BASE_URL_ITP_VOICE = isDev
       ? "https://api.itpscorp.com/dev/portal/itpvoice/v2/"
-      : "https://api.itpscorp.com/portal/itpvoice/v2/";
+      : "https://api.itp360.com/portal/itpvoice/v2/";
 
   static String WEB_SOCKET_URL = isDev
       ? "wss://ws.dev.sip.itpvoice.net:5066"
